@@ -8,19 +8,17 @@ import torch
 import torch.nn.utils as utils
 from tqdm import tqdm
 
-
 class Trainer():
     def __init__(self, args, loader, my_model, my_loss, ckp):
         self.args = args
         self.scale = args.scale
-        self.epochs = args.epochs
+
         self.ckp = ckp
         self.loader_train = loader.loader_train
         self.loader_test = loader.loader_test
         self.model = my_model
         self.loss = my_loss
         self.optimizer = utility.make_optimizer(args, self.model)
-        self.time_sum = []
 
         if self.args.load != '':
             self.optimizer.load(ckp.dir, epoch=len(ckp.log))
@@ -31,21 +29,23 @@ class Trainer():
         self.loss.step()
         epoch = self.optimizer.get_last_epoch() + 1
         lr = self.optimizer.get_lr()
-        self.time_epoch = []
 
         self.ckp.write_log(
-            '[Epoch {}/{}]\tLearning rate: {:.2e}'.format(epoch, self.epochs, Decimal(lr))
+            '[Epoch {}]\tLearning rate: {:.2e}'.format(epoch, Decimal(lr))
         )
         self.loss.start_log()
         self.model.train()
 
         timer_data, timer_model = utility.timer(), utility.timer()
-        for batch, (lr, hr, _, idx_scale) in enumerate(self.loader_train):
+        # TEMP
+        self.loader_train.dataset.set_scale(0)
+        for batch, (lr, hr, _,) in enumerate(self.loader_train):
             lr, hr = self.prepare(lr, hr)
             timer_data.hold()
             timer_model.tic()
+
             self.optimizer.zero_grad()
-            sr = self.model(lr, idx_scale)
+            sr = self.model(lr, 0)
             loss = self.loss(sr, hr)
             loss.backward()
             if self.args.gclip > 0:
@@ -58,16 +58,12 @@ class Trainer():
             timer_model.hold()
 
             if (batch + 1) % self.args.print_every == 0:
-                a = timer_model.release()
-                b = timer_data.release()
-
                 self.ckp.write_log('[{}/{}]\t{}\t{:.1f}+{:.1f}s'.format(
                     (batch + 1) * self.args.batch_size,
                     len(self.loader_train.dataset),
                     self.loss.display_loss(batch),
-                    a,
-                    b))
-                self.time_epoch.append(a + b)
+                    timer_model.release(),
+                    timer_data.release()))
 
             timer_data.tic()
 
@@ -75,40 +71,30 @@ class Trainer():
         self.error_last = self.loss.log[-1, -1]
         self.optimizer.schedule()
 
-        time_epo = sum(self.time_epoch)
-        self.ckp.write_log('time_sum：%.2fs' % time_epo)
-        self.time_sum.append(time_epo)
-
     def test(self):
         torch.set_grad_enabled(False)
 
         epoch = self.optimizer.get_last_epoch()
         self.ckp.write_log('\nEvaluation:')
-        if self.args.test_only:
-            self.ckp.add_log(
-                torch.zeros(1, len(self.loader_test), 2)
-            )
-        else:
-            self.ckp.add_log(
-                torch.zeros(1, len(self.loader_test), len(self.scale))
-            )
+        self.ckp.add_log(
+            torch.zeros(1, len(self.loader_test), len(self.scale))
+        )
         self.model.eval()
 
         timer_test = utility.timer()
         if self.args.save_results: self.ckp.begin_background()
-
         for idx_data, d in enumerate(self.loader_test):
             for idx_scale, scale in enumerate(self.scale):
                 d.dataset.set_scale(idx_scale)
-                for lr, hr, filename, _ in tqdm(d, ncols=80):
+                for lr, hr, filename in tqdm(d, ncols=80):
                     lr, hr = self.prepare(lr, hr)
                     sr = self.model(lr, idx_scale)
                     sr = utility.quantize(sr, self.args.rgb_range)
+
                     save_list = [sr]
                     self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
                         sr, hr, scale, self.args.rgb_range, dataset=d
                     )
-
                     if self.args.save_gt:
                         save_list.extend([lr, hr])
 
@@ -116,18 +102,14 @@ class Trainer():
                         self.ckp.save_results(d, filename[0], save_list, scale)
 
                 self.ckp.log[-1, idx_data, idx_scale] /= len(d)
-                if self.args.test_only:
-                    self.ckp.log[-1, idx_data, idx_scale+1] /= len(d)
-
                 best = self.ckp.log.max(0)
-
                 self.ckp.write_log(
-                    '[{} x{}]\tPSNR: {:.4f} (Best: {:.4f} @epoch {}))'.format(
+                    '[{} x{}]\tPSNR: {:.3f} (Best: {:.3f} @epoch {})'.format(
                         d.dataset.name,
                         scale,
                         self.ckp.log[-1, idx_data, idx_scale],
                         best[0][idx_data, idx_scale],
-                        best[1][idx_data, idx_scale] + 1,
+                        best[1][idx_data, idx_scale] + 1
                     )
                 )
 
@@ -146,14 +128,8 @@ class Trainer():
 
         torch.set_grad_enabled(True)
 
-    def time(self):
-        self.ckp.write_log('\ntime_Train\ttime_Average')
-        self.ckp.write_log('{:.2f}s \t{:.2f}s'.format(sum(self.time_sum), sum(self.time_sum) / self.epochs))
-
-
     def prepare(self, *args):
         device = torch.device('cpu' if self.args.cpu else 'cuda')
-
         def _prepare(tensor):
             if self.args.precision == 'half': tensor = tensor.half()
             return tensor.to(device)
@@ -165,5 +141,5 @@ class Trainer():
             self.test()
             return True
         else:
-            epoch = self.optimizer.get_last_epoch()
+            epoch = self.optimizer.get_last_epoch() + 1
             return epoch >= self.args.epochs

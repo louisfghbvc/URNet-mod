@@ -1,4 +1,3 @@
-import sys
 import threading
 import random
 
@@ -156,4 +155,3 @@ class MSDataLoader(DataLoader):
 
     def __iter__(self):
         return _MSDataLoaderIter(self)
-

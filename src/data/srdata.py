@@ -154,4 +154,3 @@ class SRData(data.Dataset):
             self.idx_scale = idx_scale
         else:
             self.idx_scale = random.randint(0, len(self.scale) - 1)
-

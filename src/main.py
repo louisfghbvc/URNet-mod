@@ -1,9 +1,4 @@
-import os
 import torch
-
-import random
-
-from torch.backends import cudnn
 
 import utility
 import data
@@ -11,19 +6,9 @@ import model
 import loss
 from option import args
 from trainer import Trainer
-import torch.nn as nn
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 torch.manual_seed(args.seed)
-
-#torch.cuda.manual_seed(args.seed)
-#torch.cuda.manual_seed_all(args.seed)
-#random.seed(args.seed)              ##
-#cudnn.benchmark = False             ##
-#torch.backends.cudnn.deterministic = True
-
 checkpoint = utility.checkpoint(args)
-
 
 def main():
     global model
@@ -41,11 +26,8 @@ def main():
             while not t.terminate():
                 t.train()
                 t.test()
-            if not args.test_only:
-                t.time() ##
 
             checkpoint.done()
-
 
 if __name__ == '__main__':
     main()

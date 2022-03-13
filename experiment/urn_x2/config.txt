@@ -1,4 +1,4 @@
-2022-03-13-15:51:02
+2022-03-13-17:38:02
 
 debug: False
 template: .
@@ -35,7 +35,7 @@ n_resgroups: 10
 reduction: 16
 reset: True
 test_every: 1000
-epochs: 1000
+epochs: 600
 batch_size: 32
 split_batch: 1
 self_ensemble: False

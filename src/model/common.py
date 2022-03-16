@@ -4,13 +4,27 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from torch import Tensor
 
 def default_conv(in_channels, out_channels, kernel_size, bias=True):
     return nn.Conv2d(
         in_channels, out_channels, kernel_size,
         padding=(kernel_size // 2), bias=bias)
 
+def channel_shuffle(x: Tensor, groups: int) -> Tensor:
+    batchsize, num_channels, height, width = x.size()
+    channels_per_group = num_channels // groups
+
+    # reshape
+    
+    x = x.view(batchsize, groups, channels_per_group, height, width)
+
+    x = torch.transpose(x, 1, 2).contiguous()
+
+    # flatten
+    x = x.view(batchsize, -1, height, width)
+
+    return x
 
 class MeanShift(nn.Conv2d):
     def __init__(
@@ -90,3 +104,18 @@ class Upsampler(nn.Sequential):
             raise NotImplementedError
 
         super(Upsampler, self).__init__(*m)
+
+class sMLPBlock(nn.Module):
+    def __init__(self,h=224,w=224,c=3):
+        super().__init__()
+        self.proj_h = nn.Linear(h, h)
+        self.proj_w = nn.Linear(w, w)
+        self.fuse = nn.Linear(3*c,c)
+    
+    def forward(self,x):
+        x_h = self.proj_h(x.permute(0,1,3,2)).permute(0,1,3,2)
+        x_w = self.proj_w(x)
+        x_id = x
+        x_fuse = torch.cat([x_h, x_w, x_id], dim = 1)
+        out = self.fuse(x_fuse.permute(0,2,3,1)).permute(0,3,1,2)
+        return out

@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch
 import torch.nn.functional as F
 
+from model import common
 
 def conv_layer(in_channels, out_channels, kernel_size, stride=1, dilation=1, groups=1):
     padding = int((kernel_size - 1) / 2) * dilation
@@ -133,9 +134,10 @@ class ESA(nn.Module):
 
 
 class E_RFDB(nn.Module):
-    def __init__(self, in_channels, distillation_rate=0.25, add=False):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False):
         super(E_RFDB, self).__init__()
         self.add = add
+        self.shuffle = shuffle
         self.dc = self.distilled_channels = in_channels//2
         self.rc = self.remaining_channels = in_channels
         self.c1_d = conv_layer(in_channels, self.dc, 1)
@@ -166,11 +168,50 @@ class E_RFDB(nn.Module):
 
         out = torch.cat([distilled_c1, distilled_c2, distilled_c3, r_c4], dim=1)
         out_fused = self.esa(self.c5(out))
+
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
         if self.add:
             return out_fused + input
         else:
             return out_fused
 
+class IMDM2(nn.Module):
+    def __init__(self, in_channels, distillation_rate=0.5, add=False, shuffle=False):
+        super(IMDModule, self).__init__()
+        self.distilled_channels = int(in_channels * distillation_rate)
+        self.remaining_channels = int(in_channels - self.distilled_channels)
+        self.c1 = conv_layer(in_channels, in_channels, 3)
+        self.c2 = conv_layer(self.remaining_channels, in_channels, 3)
+        self.c3 = conv_layer(self.remaining_channels, in_channels, 3)
+        self.c4 = conv_layer(self.remaining_channels, self.distilled_channels, 3)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.c5 = conv_layer(4*in_channels, in_channels, 1)
+        self.esa = ESA(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        out_c1 = self.act(self.c1(input))
+        distilled_c1, remaining_c1 = torch.split(out_c1, (self.distilled_channels, self.remaining_channels), dim=1)
+
+        out_c2 = self.act(self.c2(remaining_c1))
+        distilled_c2, remaining_c2 = torch.split(out_c2, (self.distilled_channels, self.remaining_channels), dim=1)
+
+        out_c3 = self.act(self.c3(remaining_c2))
+        distilled_c3, remaining_c3 = torch.split(out_c3, (self.distilled_channels, self.remaining_channels), dim=1)
+        
+        out_c4 = self.c4(remaining_c3)
+        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, out_c4], dim=1)
+
+        if add:
+            out_fused = self.esa(self.c5(out)) + input
+        else:
+            out_fused = self.esa(self.c5(out))
+        
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        return out_fused
 
 def pixelshuffle_block(in_channels, out_channels, upscale_factor=2, kernel_size=3, stride=1):
     conv = conv_layer(in_channels, out_channels * (upscale_factor ** 2), kernel_size, stride)

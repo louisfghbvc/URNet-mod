@@ -110,10 +110,10 @@ class CFPB(nn.Module):
 
 
 class RFDBBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, ver=False, tail=False, add=False, shuffle=False):
+    def __init__(self, in_channels, out_channels, ver=False, tail=False, add=False, shuffle=False, bone=E_RFDB):
         super(RFDBBlock, self).__init__()
         if ver:
-            block = [E_RFDB(in_channels, add=add, shuffle=shuffle)]
+            block = [bone(in_channels, add=add, shuffle=shuffle)]
             if not tail:
                 block.append(nn.Conv2d(in_channels, out_channels, 1, padding=0))
             self.block = nn.Sequential(*block)
@@ -121,7 +121,7 @@ class RFDBBlock(nn.Module):
             block = []
             if not tail:
                 block.append(nn.Conv2d(in_channels, out_channels, 1, padding=0))
-            block.append(E_RFDB(out_channels, add=add, shuffle=shuffle))
+            block.append(bone(out_channels, add=add, shuffle=shuffle))
             self.block = nn.Sequential(*block)
 
     def forward(self, x):
@@ -129,7 +129,7 @@ class RFDBBlock(nn.Module):
 
 
 class FDPRG(nn.Module):
-    def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False):  # n_RG=4
+    def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False, bone=E_RFDB):  # n_RG=4
         super(FDPRG, self).__init__()
         self.scale = scale
         self.w0 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
@@ -139,15 +139,15 @@ class FDPRG(nn.Module):
         self.w1.data.fill_(1.0)
         self.w2.data.fill_(1.0)
 
-        self.m1 = E_RFDB(channels, shuffle=shuffle)
+        self.m1 = bone(channels, shuffle=shuffle)
         self.w_m1 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
         self.w_m1.data.fill_(1.0)
 
-        self.m2 = E_RFDB(channels, shuffle=shuffle)
+        self.m2 = bone(channels, shuffle=shuffle)
         self.w_m2 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
         self.w_m2.data.fill_(1.0)
 
-        self.m3 = E_RFDB(channels, shuffle=shuffle)
+        self.m3 = bone(channels, shuffle=shuffle)
         self.w_m3 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
         self.w_m3.data.fill_(1.0)
         if self.scale != 3:

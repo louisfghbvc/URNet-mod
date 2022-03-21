@@ -9,7 +9,7 @@ from model.block_rfdn import pixelshuffle_block, E_RFDB
 def make_model(args, parent=False):
     return URN2(args)
 
-# backbone + shuffle channel
+# backbone + shuffle channel last(fail), first+last(?)
 class URN2(nn.Module):
     def __init__(self, args):
         super(URN2, self).__init__()
@@ -32,9 +32,9 @@ class URN2(nn.Module):
         up = []
         for p in range(4):
             if p == 3:
-                up.append(E_RFDB(nf // channels[3 - p], nf, shuffle=True))
+                up.append(E_RFDB(nf // channels[3 - p], nf, shuffle=False))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, shuffle=True))
+                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, shuffle=False))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)

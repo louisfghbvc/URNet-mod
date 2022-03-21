@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from model import common
 from model.block import FDPRG, RFDBBlock, ANRB, ACBlock
-from model.block_rfdn import pixelshuffle_block, E_RFDB, E_RFDB_Share
+from model.block_rfdn import pixelshuffle_block, E_RFDB, E_RFDB_Share, E_RFDB_ShareV2
 
 
 def make_model(args, parent=False):
@@ -24,17 +24,17 @@ class URN5(nn.Module):
         down = []
         for p in range(4):
             if p == 3:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=E_RFDB_Share))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=E_RFDB_ShareV2))
             else:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=E_RFDB_Share))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=E_RFDB_ShareV2))
         self.down = nn.ModuleList(down)
 
         up = []
         for p in range(4):
             if p == 3:
-                up.append(E_RFDB_Share(nf // channels[3 - p], nf))
+                up.append(E_RFDB_ShareV2(nf // channels[3 - p], nf))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, bone=E_RFDB_Share))
+                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, bone=E_RFDB_ShareV2))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)

@@ -106,16 +106,37 @@ class Upsampler(nn.Sequential):
         super(Upsampler, self).__init__(*m)
 
 class sMLPBlock(nn.Module):
-    def __init__(self,h=224,w=224,c=3):
+    def __init__(self, h=224, w=224, c=3):
         super().__init__()
         self.proj_h = nn.Linear(h, h)
         self.proj_w = nn.Linear(w, w)
         self.fuse = nn.Linear(3*c,c)
     
     def forward(self,x):
+        # b c h w
         x_h = self.proj_h(x.permute(0,1,3,2)).permute(0,1,3,2)
         x_w = self.proj_w(x)
         x_id = x
         x_fuse = torch.cat([x_h, x_w, x_id], dim = 1)
         out = self.fuse(x_fuse.permute(0,2,3,1)).permute(0,3,1,2)
         return out
+
+# mlpblock compress lightweight
+class sMLPBlockLight(nn.Module):
+    def __init__(self, h=224, w=224, c=3):
+        super().__init__()
+        self.reduction = default_conv(in_channels=c, out_channels=1, kernel_size=1)
+        self.proj_h = nn.Linear(h, h)
+        self.proj_w = nn.Linear(w, w)
+        self.fuse = nn.Linear(3,1)
+        self.expansion = default_conv(in_channels=1, out_channels=c, kernel_size=1)
+    
+    def forward(self,x):
+        # b 1 h w
+        x_h = self.proj_h(x.permute(0,1,3,2)).permute(0,1,3,2)
+        x_w = self.proj_w(x)
+        x_id = x
+        x_fuse = torch.cat([x_h, x_w, x_id], dim = 1)
+        out = self.fuse(x_fuse.permute(0,2,3,1)).permute(0,3,1,2)
+        return self.expansion(out)
+

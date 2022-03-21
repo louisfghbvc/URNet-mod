@@ -132,6 +132,19 @@ class ESA(nn.Module):
         
         return x * m
 
+# High Frequency attention
+class HFA(nn.Module):
+    def __init__(self, n_feats, conv):
+        super(ESA, self).__init__()
+        f = n_feats // 4
+        self.reduction = conv(n_feats, f, kernel_size=1)
+        self.expansion = conv(f, n_feats, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+        # self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        m = self.sigmoid(x)
+        return x * m
 
 class E_RFDB(nn.Module):
     def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False):
@@ -152,6 +165,9 @@ class E_RFDB(nn.Module):
         self.esa = ESA(in_channels, nn.Conv2d)
 
     def forward(self, input):
+        if self.shuffle: # channel shuffle
+            input = common.channel_shuffle(input, 2)
+
         distilled_c1 = self.act(self.c1_d(input))
         r_c1 = (self.c1_r(input))
         r_c1 = self.act(r_c1+input)
@@ -177,9 +193,108 @@ class E_RFDB(nn.Module):
         else:
             return out_fused
 
-class IMDM2(nn.Module):
+# share weight, like merge sort
+class E_RFDB_Share(nn.Module):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False):
+        super(E_RFDB_Share, self).__init__()
+        self.add = add
+        self.shuffle = shuffle
+        self.dc = self.distilled_channels = in_channels//2
+        self.rc = self.remaining_channels = in_channels
+        self.c1_d = conv_layer(in_channels, self.dc, 1)
+        self.c1_r = conv_layer(in_channels, self.rc, 3)
+        self.c2_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c2_r = conv_layer(self.remaining_channels, self.rc, 3)
+        self.c3_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c3_r = conv_layer(self.remaining_channels, self.rc, 3)
+        self.c4 = conv_layer(self.remaining_channels, self.dc, 3)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.c5 = conv_layer(self.dc*2, in_channels, 1) # share weight
+        self.esa = ESA(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        if self.shuffle: # channel shuffle
+            input = common.channel_shuffle(input, 2)
+
+        distilled_c1 = self.act(self.c1_d(input))
+        r_c1 = (self.c1_r(input))
+        r_c1 = self.act(r_c1+input)
+
+        distilled_c2 = self.act(self.c2_d(r_c1))
+        r_c2 = (self.c2_r(r_c1))
+        r_c2 = self.act(r_c2+r_c1)
+
+        distilled_c3 = self.act(self.c3_d(r_c2))
+        r_c3 = (self.c3_r(r_c2))
+        r_c3 = self.act(r_c3+r_c2)
+
+        r_c4 = self.act(self.c4(r_c3))
+
+        _out1 = self.c5(torch.cat([distilled_c1, distilled_c2], dim=1))
+        _out2 = self.c5(torch.cat([distilled_c3, r_c4], dim=1))
+        out_fused = self.esa(self.c5(_out1 + _out2))
+
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        if self.add:
+            return out_fused + input
+        else:
+            return out_fused
+
+# share weight, like merge sort
+class E_RFDB_ShareV2(nn.Module):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False):
+        super(E_RFDB_ShareV2, self).__init__()
+        self.add = add
+        self.shuffle = shuffle
+        self.dc = self.distilled_channels = in_channels//2
+        self.rc = self.remaining_channels = in_channels
+        self.c1_d = conv_layer(in_channels, self.dc, 1)
+        self.c1_r = conv_layer(in_channels, self.rc, 3)
+        self.c2_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c2_r = conv_layer(self.remaining_channels, self.rc, 3)
+        self.c3_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c3_r = conv_layer(self.remaining_channels, self.rc, 3)
+        self.c4 = conv_layer(self.remaining_channels, self.dc, 3)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.c5 = conv_layer(self.dc*2, self.dc, 1) # share weight
+        self.esa = ESA(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        if self.shuffle: # channel shuffle
+            input = common.channel_shuffle(input, 2)
+
+        distilled_c1 = self.act(self.c1_d(input))
+        r_c1 = (self.c1_r(input))
+        r_c1 = self.act(r_c1+input)
+
+        distilled_c2 = self.act(self.c2_d(r_c1))
+        r_c2 = (self.c2_r(r_c1))
+        r_c2 = self.act(r_c2+r_c1)
+
+        distilled_c3 = self.act(self.c3_d(r_c2))
+        r_c3 = (self.c3_r(r_c2))
+        r_c3 = self.act(r_c3+r_c2)
+
+        r_c4 = self.act(self.c4(r_c3))
+
+        _out1 = self.c5(torch.cat([distilled_c1, distilled_c2], dim=1))
+        _out2 = self.c5(torch.cat([distilled_c3, r_c4], dim=1))
+        out_fused = self.esa(torch.cat([_out1, _out2], dim=1))
+
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        if self.add:
+            return out_fused + input
+        else:
+            return out_fused
+
+# IMDB swap block in c2
+class IMDBs(nn.Module):
     def __init__(self, in_channels, distillation_rate=0.5, add=False, shuffle=False):
-        super(IMDModule, self).__init__()
+        super(IMDBs, self).__init__()
         self.distilled_channels = int(in_channels * distillation_rate)
         self.remaining_channels = int(in_channels - self.distilled_channels)
         self.c1 = conv_layer(in_channels, in_channels, 3)
@@ -195,11 +310,48 @@ class IMDM2(nn.Module):
         distilled_c1, remaining_c1 = torch.split(out_c1, (self.distilled_channels, self.remaining_channels), dim=1)
 
         out_c2 = self.act(self.c2(remaining_c1))
-        distilled_c2, remaining_c2 = torch.split(out_c2, (self.distilled_channels, self.remaining_channels), dim=1)
+        remaining_c2, distilled_c2 = torch.split(out_c2, (self.distilled_channels, self.remaining_channels), dim=1)
 
         out_c3 = self.act(self.c3(remaining_c2))
         distilled_c3, remaining_c3 = torch.split(out_c3, (self.distilled_channels, self.remaining_channels), dim=1)
+
+        out_c4 = self.c4(remaining_c3)
+        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, out_c4], dim=1)
+
+        if add:
+            out_fused = self.esa(self.c5(out)) + input
+        else:
+            out_fused = self.esa(self.c5(out))
         
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        return out_fused
+
+# IMDB dual(do twice alternate) net with self-learning
+class IMDBDual(nn.Module):
+    def __init__(self, in_channels, distillation_rate=0.5, add=False, shuffle=False):
+        super(IMDBDual, self).__init__()
+        self.distilled_channels = int(in_channels * distillation_rate)
+        self.remaining_channels = int(in_channels - self.distilled_channels)
+        self.c1 = conv_layer(in_channels, in_channels, 3)
+        self.c2 = conv_layer(self.remaining_channels, in_channels, 3)
+        self.c3 = conv_layer(self.remaining_channels, in_channels, 3)
+        self.c4 = conv_layer(self.remaining_channels, self.distilled_channels, 3)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.c5 = conv_layer(4*in_channels, in_channels, 1)
+        self.esa = ESA(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        out_c1 = self.act(self.c1(input))
+        distilled_c1, remaining_c1 = torch.split(out_c1, (self.distilled_channels, self.remaining_channels), dim=1)
+
+        out_c2 = self.act(self.c2(remaining_c1))
+        remaining_c2, distilled_c2 = torch.split(out_c2, (self.distilled_channels, self.remaining_channels), dim=1)
+
+        out_c3 = self.act(self.c3(remaining_c2))
+        distilled_c3, remaining_c3 = torch.split(out_c3, (self.distilled_channels, self.remaining_channels), dim=1)
+
         out_c4 = self.c4(remaining_c3)
         out = torch.cat([distilled_c1, distilled_c2, distilled_c3, out_c4], dim=1)
 

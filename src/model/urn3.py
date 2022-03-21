@@ -9,7 +9,7 @@ from model.block_rfdn import pixelshuffle_block, E_RFDB
 def make_model(args, parent=False):
     return URN3(args)
 
-# backbone IMDB
+# backbone IMDB shuffle -> next step dual
 class URN3(nn.Module):
     def __init__(self, args):
         super(URN3, self).__init__()

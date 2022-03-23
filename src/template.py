@@ -56,3 +56,8 @@ def set_template(args):
         args.lr = 2e-4
         args.epochs = 1000
         args.batch_size = 16
+
+    if args.template.find('RFDN') >= 0:
+        args.model = 'RFDN'
+        args.lr = 5e-4
+        args.n_feats = 48

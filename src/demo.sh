@@ -5,7 +5,7 @@
 # python main.py --dir_data ../dataset --model urn2 --scale 2 --patch_size 128 --batch_size 32 --save urn2.1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --reset
 
 # v5 + share weight
-python main.py --dir_data ../dataset --model urn5 --scale 2 --patch_size 128 --batch_size 32 --save urn5.1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --reset
+# python main.py --dir_data ../dataset --model urn5 --scale 2 --patch_size 128 --batch_size 32 --save urn5.1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --reset
 
 
 # URNet model (x3) - from URNet (x2)
@@ -15,7 +15,7 @@ python main.py --dir_data ../dataset --model urn5 --scale 2 --patch_size 128 --b
 #python main.py --model urn --scale 4 --patch_size 256 --batch_size 32 --save urn_x4 --loss 1.0*L1+0.25*canny --lr 5e-4 --reset --pre_train [pre-trained urn_x2 model dir]
 
 # Test your own images
-python main.py --dir_data ../dataset --model urn5 --data_test Set5+Set14+B100+Urban100 --scale 2 --pre_train ../experiment/urn5.1_x2/model/model_best.pt --test_only --save_results
+# python main.py --dir_data ../dataset --model urn5 --data_test Set5+Set14+B100+Urban100 --scale 2 --pre_train ../experiment/urn5.1_x2/model/model_best.pt --test_only --save_results
 
 # python main.py --dir_data ../dataset --model urn --data_test Set5+Set14+B100+Urban100--scale 2 --pre_train ../pre_trained/urn_x2.pt --test_only --save_results
 
@@ -76,3 +76,7 @@ python main.py --dir_data ../dataset --model urn5 --data_test Set5+Set14+B100+Ur
 # RCAN_BIX8_G10R20P48, input=48x48, output=384x384
 #python main.py --template RCAN --save RCAN_BIX8_G10R20P48 --scale 8 --reset --save_results --patch_size 384 --pre_train ../experiment/model/RCAN_BIX2.pt
 
+
+# RFDN (paper + avg)
+python main.py --dir_data ../dataset --template RFDN --model RFDN --scale 2 --patch_size 128 --batch_size 32 --save RFDN_x2 --lr 5e-4 --reset
+python main.py --dir_data ../dataset --model RFDN --data_test Set5+Set14+B100+Urban100 --scale 2 --pre_train ../experiment/RFDN_x2/model/model_best.pt --test_only --save_results

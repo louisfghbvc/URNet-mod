@@ -4,11 +4,8 @@ from option import args
 from model.edsr import EDSR
 from model.rcan import RCAN
 # from model.mynet import make_model
-from model.urn import make_model
-
-# model = EDSR(args)
-model = make_model(args)
-stat(model, (3, 256, 256))
+from model.urn5 import make_model
+from model.rfdn import RFDN
 
 # # 统计网络层数与参数
 # net = model
@@ -25,3 +22,7 @@ stat(model, (3, 256, 256))
 #     k = k+l
 # print('总参数和：'+ str(k))
 
+if __name__ == '__main__':
+    model = RFDN(args)
+    # model = make_model(args)
+    stat(model, (3, 256, 256))

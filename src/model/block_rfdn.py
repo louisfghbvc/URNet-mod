@@ -132,22 +132,48 @@ class ESA(nn.Module):
         
         return x * m
 
-# High Frequency attention
-class HFA(nn.Module):
+# Channel Attention Tweak
+class MCA(nn.Module):
     def __init__(self, n_feats, conv):
-        super(ESA, self).__init__()
+        super(MCA, self).__init__()
         f = n_feats // 4
+        # global average pooling: feature --> point
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+        # down scale and up scale
         self.reduction = conv(n_feats, f, kernel_size=1)
+        self.conv1 = nn.Conv1d(f, f, kernel_size=1, padding=0, bias=True)
         self.expansion = conv(f, n_feats, kernel_size=1)
+
         self.sigmoid = nn.Sigmoid()
-        # self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        m = self.sigmoid(x)
+        n, c, h, w = x.size()
+
+        # fetch h, w feature
+        w_max = F.adaptive_avg_pool2d(x, size=(h, 1)).view(n, c, -1)
+        h_max = F.adaptive_avg_pool2d(x, size=(1, w)).view(n, c, -1)
+        hw_f = torch.cat([w_max, h_max], dim=-1)
+
+        # reduce
+        y = self.reduction(hw_f)
+        y = self.relu(y)
+
+        # convert feature and to point
+        y = self.conv1(y)
+        y = self.relu(y)
+        y = self.avg_pool(y)
+
+        # recover
+        y = self.expansion(y)
+
+        m = self.sigmoid(y)
+
         return x * m
 
 class E_RFDB(nn.Module):
-    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
         super(E_RFDB, self).__init__()
         self.add = add
         self.shuffle = shuffle
@@ -162,7 +188,7 @@ class E_RFDB(nn.Module):
         self.c4 = conv_layer(self.remaining_channels, self.dc, 3)
         self.act = activation('lrelu', neg_slope=0.05)
         self.c5 = conv_layer(self.dc*4, in_channels, 1)
-        self.esa = ESA(in_channels, nn.Conv2d)
+        self.esa = att(in_channels, nn.Conv2d)
 
     def forward(self, input):
         if self.shuffle: # channel shuffle
@@ -244,7 +270,7 @@ class E_RFDB_Share(nn.Module):
 
 # share weight, like merge sort
 class E_RFDB_ShareV2(nn.Module):
-    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
         super(E_RFDB_ShareV2, self).__init__()
         self.add = add
         self.shuffle = shuffle

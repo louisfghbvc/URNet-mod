@@ -9,7 +9,7 @@ from model.block_rfdn import pixelshuffle_block, E_RFDB
 def make_model(args, parent=False):
     return URN4(args)
 
-# backbone hardnet rfa
+# backbone + mlp
 class URN4(nn.Module):
     def __init__(self, args):
         super(URN4, self).__init__()

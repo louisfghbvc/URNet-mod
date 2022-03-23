@@ -2,7 +2,7 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 
-from model.block_rfdn import E_RFDB, E_RFDB_Share
+from model.block_rfdn import E_RFDB, E_RFDB_Share, ESA, MCA
 
 
 class CropLayer(nn.Module):
@@ -129,7 +129,7 @@ class RFDBBlock(nn.Module):
 
 
 class FDPRG(nn.Module):
-    def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False, bone=E_RFDB):  # n_RG=4
+    def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False, bone=E_RFDB, att=ESA):  # n_RG=4
         super(FDPRG, self).__init__()
         
         self.scale = scale
@@ -140,15 +140,15 @@ class FDPRG(nn.Module):
         self.w1.data.fill_(1.0)
         self.w2.data.fill_(1.0)
 
-        self.m1 = bone(channels, shuffle=shuffle)
+        self.m1 = bone(channels, shuffle=shuffle, att=att)
         self.w_m1 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
         self.w_m1.data.fill_(1.0)
 
-        self.m2 = bone(channels, shuffle=shuffle)
+        self.m2 = bone(channels, shuffle=shuffle, att=att)
         self.w_m2 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
         self.w_m2.data.fill_(1.0)
 
-        self.m3 = bone(channels, shuffle=shuffle)
+        self.m3 = bone(channels, shuffle=shuffle, att=att)
         self.w_m3 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
         self.w_m3.data.fill_(1.0)
         if self.scale != 3:

@@ -3,13 +3,13 @@ import torch.nn as nn
 
 from model import common
 from model.block import FDPRG, RFDBBlock, ANRB, ACBlock
-from model.block_rfdn import pixelshuffle_block, E_RFDB
+from model.block_rfdn import pixelshuffle_block, E_RFDB, MCA
 
 
 def make_model(args, parent=False):
     return URN3(args)
 
-# backbone IMDB shuffle -> next step dual
+# backbone ESA -> MCA
 class URN3(nn.Module):
     def __init__(self, args):
         super(URN3, self).__init__()
@@ -24,17 +24,17 @@ class URN3(nn.Module):
         down = []
         for p in range(4):
             if p == 3:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, att=MCA))
             else:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, att=MCA))
         self.down = nn.ModuleList(down)
 
         up = []
         for p in range(4):
             if p == 3:
-                up.append(E_RFDB(nf // channels[3 - p], nf))
+                up.append(E_RFDB(nf // channels[3 - p], nf, att=MCA))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale))
+                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, att=MCA))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)

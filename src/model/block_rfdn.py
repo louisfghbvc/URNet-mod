@@ -132,17 +132,15 @@ class ESA(nn.Module):
         
         return x * m
 
-# Channel Attention Tweak
+# high frequency attention tweak
 class MCA(nn.Module):
     def __init__(self, n_feats, conv):
         super(MCA, self).__init__()
         f = n_feats // 4
-        # global average pooling: feature --> point
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
 
         # down scale and up scale
         self.reduction = conv(n_feats, f, kernel_size=1)
-        self.conv1 = nn.Conv1d(f, f, kernel_size=1, padding=0, bias=True)
+        self.conv1 = conv(f, f, kernel_size=1)
         self.expansion = conv(f, n_feats, kernel_size=1)
 
         self.sigmoid = nn.Sigmoid()
@@ -152,18 +150,17 @@ class MCA(nn.Module):
         n, c, h, w = x.size()
 
         # fetch h, w feature
-        w_max = F.adaptive_avg_pool2d(x, size=(h, 1)).view(n, c, -1)
-        h_max = F.adaptive_avg_pool2d(x, size=(1, w)).view(n, c, -1)
-        hw_f = torch.cat([w_max, h_max], dim=-1)
+        w_max = F.adaptive_avg_pool2d(x, output_size=(h, 1))
+        h_max = F.adaptive_avg_pool2d(x, output_size=(1, w))
+        # hw_f = torch.cat([w_max, h_max], dim=-1)
+        hw_f = torch.matmul(w_max, h_max)
 
         # reduce
-        y = self.reduction(hw_f)
-        y = self.relu(y)
+        y = self.reduction(x - hw_f)
 
         # convert feature and to point
         y = self.conv1(y)
         y = self.relu(y)
-        y = self.avg_pool(y)
 
         # recover
         y = self.expansion(y)

@@ -112,7 +112,7 @@ class sMLPBlock(nn.Module):
         self.proj_w = nn.Linear(w, w)
         self.fuse = nn.Linear(3*c,c)
     
-    def forward(self,x):
+    def forward(self, x):
         # b c h w
         x_h = self.proj_h(x.permute(0,1,3,2)).permute(0,1,3,2)
         x_w = self.proj_w(x)

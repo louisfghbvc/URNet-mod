@@ -169,6 +169,74 @@ class MCA(nn.Module):
 
         return x * m
 
+# local attention V2
+class MCAv2(nn.Module):
+    def __init__(self, n_feats, conv):
+        super(MCAv2, self).__init__()
+        f = n_feats // 4
+
+        # down scale and up scale
+        self.reduction = conv(n_feats, f, kernel_size=1)
+        self.conv_h = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=False)
+        self.conv_w = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=False)
+        self.expansion = conv(f, n_feats, kernel_size=1)
+
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.reduction(x)
+        n, c, h, w = x.size()
+
+        # fetch h, w feature
+        # n, c, h, 1
+        hf = F.adaptive_avg_pool2d(x, output_size=(h, 1))
+        hf = self.conv_h(hf.squeeze(-1)).unsqueeze(-1)
+        hf = self.sigmoid(hf)
+
+        # n, c, 1, w
+        wf = F.adaptive_avg_pool2d(x, output_size=(1, w))
+        wf = self.conv_w(wf.squeeze(-2)).unsqueeze(-2)
+        wf = self.sigmoid(wf)
+
+        out = x * hf.expand_as(x) + x * wf.expand_as(x)
+
+        return self.expansion(out)
+
+# local attention V3
+class MCAv3(nn.Module):
+    def __init__(self, n_feats, conv):
+        super(MCAv3, self).__init__()
+        f = n_feats // 4
+
+        # down scale and up scale
+        self.reduction = conv(n_feats, f, kernel_size=1)
+        self.conv_h = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=False)
+        self.conv_w = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=False)
+        self.fuse = conv(3*f, f, kernel_size=1)
+        self.expansion = conv(f, n_feats, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.reduction(x)
+        n, c, h, w = x.size()
+
+        # fetch h, w feature
+        # n, c, h, 1
+        hf = F.adaptive_avg_pool2d(x, output_size=(h, 1))
+        hf = self.conv_h(hf.squeeze(-1)).unsqueeze(-1)
+        hf = self.sigmoid(hf)
+
+        # n, c, 1, w
+        wf = F.adaptive_avg_pool2d(x, output_size=(1, w))
+        wf = self.conv_w(wf.squeeze(-2)).unsqueeze(-2)
+        wf = self.sigmoid(wf)
+
+        # concate all features
+        x_fuse = torch.cat([x * hf.expand_as(x), x * wf.expand_as(x), x], dim=1)
+        out = self.fuse(x_fuse)
+
+        return self.expansion(out)
+
 class E_RFDB(nn.Module):
     def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
         super(E_RFDB, self).__init__()

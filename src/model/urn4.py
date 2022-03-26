@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from model import common
-from model.block import FDPRG, RFDBBlock, ANRB, ACBlock
+from model.block import *
 from model.block_rfdn import pixelshuffle_block, E_RFDB
 
 
@@ -15,6 +15,7 @@ class URN4(nn.Module):
         super(URN4, self).__init__()
         nf = args.n_feats
         scale = args.scale[0]
+        patch_size = args.patch_size
         self.test_only = args.test_only
         self.sub_mean = common.MeanShift(args.rgb_range)
         self.add_mean = common.MeanShift(args.rgb_range, sign=1)
@@ -38,7 +39,7 @@ class URN4(nn.Module):
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)
-        self.anrb = ANRB(nf)
+        self.anrb = ASMLP(nf)
 
         self.tail_up = pixelshuffle_block(nf, args.n_colors, upscale_factor=scale)
 

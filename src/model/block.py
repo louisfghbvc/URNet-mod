@@ -247,3 +247,138 @@ class ANRB(nn.Module):
         context = self.W(context)
         context += x
         return context
+
+class ANRB_P(nn.Module):
+    def __init__(self, in_channels, scale=1, psp_size=(1, 3, 6, 8)):
+        super(ANRB_P, self).__init__()
+        self.scale = scale
+        self.in_channels = in_channels
+        self.pool = nn.MaxPool2d(kernel_size=(scale, scale))
+        self.f_query = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=1)
+        self.f_key = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=1)
+        self.f_value = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=1)
+
+        self.psp = PSPModule(psp_size)
+        self.proj = nn.Linear(110, 110)
+
+        self.W = nn.Conv2d(in_channels=1, out_channels=self.in_channels, kernel_size=1)
+        nn.init.constant_(self.W.weight, 0)
+        nn.init.constant_(self.W.bias, 0)
+
+    def forward(self, x):
+        batch_size, h, w = x.size(0), x.size(2), x.size(3)
+        if self.scale > 1:
+            x = self.pool(x)
+
+        # query: Nx1xHxW -> Nx1xHW
+        query = self.f_query(x).view(batch_size, 1, -1)
+        # Nx1xHW -> NxHWx1
+        query = query.permute(0, 2, 1)
+
+        # key：Nx1xS
+        key = self.f_key(x)
+        key = self.psp(key)
+
+        # value: Nx1xHW -> Nx1xS （S = 110）
+        value = self.psp(self.f_value(x))
+        value = self.proj(value)
+        # Nx1xS -> NxSx1 （S = 110）
+        value = value.permute(0, 2, 1)
+
+        sim_map = torch.matmul(query, key)
+        # no normalize?
+        sim_map = (1 ** -.5) * sim_map
+        sim_map = F.softmax(sim_map, dim=-1)
+
+        context = torch.matmul(sim_map, value)
+        context = context.permute(0, 2, 1).contiguous()
+        context = context.view(batch_size, 1, h, w)
+        context = self.W(context)
+        context += x
+        return context
+
+
+# class ACMLP(nn.Module):
+#     def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1, groups=1, padding_mode='zeros'):
+#         super(ACMLP, self).__init__()
+#         self.padding = kernel_size // 2
+
+#         center_offset_from_origin_border = self.padding - kernel_size // 2
+#         ver_pad_or_crop = (center_offset_from_origin_border + 1, center_offset_from_origin_border)
+#         hor_pad_or_crop = (center_offset_from_origin_border, center_offset_from_origin_border + 1)
+#         if center_offset_from_origin_border >= 0:
+#             self.ver_conv_crop_layer = nn.Identity()
+#             ver_conv_padding = ver_pad_or_crop
+#             self.hor_conv_crop_layer = nn.Identity()
+#             hor_conv_padding = hor_pad_or_crop
+#         else:
+#             self.ver_conv_crop_layer = CropLayer(crop_set=ver_pad_or_crop)
+#             ver_conv_padding = (0, 0)
+#             self.hor_conv_crop_layer = CropLayer(crop_set=hor_pad_or_crop)
+#             hor_conv_padding = (0, 0)
+
+#         # convert to 1
+#         self.reduction = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=1)
+#         self.expansion = nn.Conv2d(in_channels=1, out_channels=out_channels, kernel_size=1)
+
+#         self.ver_conv = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=(kernel_size, 1),
+#                                     stride=stride,
+#                                     padding='same', dilation=dilation, groups=groups, bias=True,
+#                                     padding_mode=padding_mode)
+
+#         self.hor_conv = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=(1, kernel_size),
+#                                     stride=stride,
+#                                     padding='same', dilation=dilation, groups=groups, bias=True,
+#                                     padding_mode=padding_mode)
+
+#         self.fuse = nn.Conv2d(in_channels=3, out_channels=1, kernel_size=1,
+#                                     stride=stride,
+#                                     padding='same', dilation=dilation, groups=groups, bias=True,
+#                                     padding_mode=padding_mode)
+
+#     def forward(self, input):
+#         x = self.reduction(input)
+
+#         vertical_outputs = self.ver_conv_crop_layer(x)
+#         vertical_outputs = self.ver_conv(vertical_outputs)
+
+#         horizontal_outputs = self.hor_conv_crop_layer(x)
+#         horizontal_outputs = self.hor_conv(horizontal_outputs)
+#         x_fuse = torch.cat([vertical_outputs, horizontal_outputs, x], dim = 1)
+#         out = self.fuse(x_fuse)
+
+#         return self.expansion(out)
+
+
+class ASMLP(nn.Module):
+    def __init__(self, in_channels, scale=1, psp_size=(1, 3, 6, 8)):
+        super(ASMLP, self).__init__()
+        self.scale = scale
+        self.in_channels = in_channels
+        # self.pool = nn.MaxPool2d(kernel_size=(scale, scale))
+        self.reduction = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=1)
+        self.psp = PSPModule(psp_size)
+        self.proj_h = nn.Linear(110, 110)
+        self.proj_w = nn.Linear(110, 110)
+        self.fuse = nn.Conv2d(in_channels=3, out_channels=1, kernel_size=1)
+        self.expansion = nn.Conv2d(in_channels=1, out_channels=self.in_channels, kernel_size=1)
+
+    def forward(self, x):
+        # b c h w
+        batch_size, h, w = x.size(0), x.size(2), x.size(3)
+        # if self.scale > 1:
+        #     x = self.pool(x)
+        x = self.reduction(x)
+
+        # convert to low dimension
+        w_psp = self.psp(x)
+        h_psp = self.psp(x.permute(0,1,3,2))
+
+        # sparse-attention
+        x_h = self.proj_h(h_psp)
+        x_w = self.proj_w(w_psp)
+
+        x_fuse = torch.cat([x_h.expand(x), x_w.expand(x), x], dim = 1)
+        out = self.fuse(x_fuse)
+
+        return self.expansion(x)

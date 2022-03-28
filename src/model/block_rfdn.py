@@ -104,6 +104,43 @@ def sequential(*args):
             modules.append(module)
     return nn.Sequential(*modules)
 
+# contrast-aware channel attention module
+class CCALayer(nn.Module):
+    def __init__(self, channel, conv, reduction=4):
+        super(CCALayer, self).__init__()
+
+        self.contrast = stdv_channels
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv_du = nn.Sequential(
+            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
+            nn.Sigmoid()
+        )
+
+
+    def forward(self, x):
+        y = self.contrast(x) + self.avg_pool(x)
+        y = self.conv_du(y)
+        return x * y
+
+# contrast-aware channel attention module + ECA, cur fix 3
+class ECCALayer(nn.Module):
+    def __init__(self, kernel_size, conv, reduction=4):
+        super(ECCALayer, self).__init__()
+
+        self.contrast = stdv_channels
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        # kernel size fix 3
+        self.conv_du = nn.Conv1d(1, 1, kernel_size=3, padding=1, bias=True) 
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        y = self.contrast(x) + self.avg_pool(x)
+        y = self.conv_du(y.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1))
+        y = self.sigmoid(y)
+        return x * y
+
 class ESA(nn.Module):
     def __init__(self, n_feats, conv):
         super(ESA, self).__init__()
@@ -210,8 +247,8 @@ class MCAv3(nn.Module):
 
         # down scale and up scale
         self.reduction = conv(n_feats, f, kernel_size=1)
-        self.conv_h = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=False)
-        self.conv_w = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=False)
+        self.conv_h = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=True)
+        self.conv_w = nn.Conv1d(f, f, kernel_size=3, padding=1, bias=True)
         self.fuse = conv(3*f, f, kernel_size=1)
         self.expansion = conv(f, n_feats, kernel_size=1)
         self.sigmoid = nn.Sigmoid()
@@ -236,6 +273,47 @@ class MCAv3(nn.Module):
         out = self.fuse(x_fuse)
 
         return self.expansion(out)
+
+# local attention V4
+class MCAv4(nn.Module):
+    def __init__(self, n_feats, conv):
+        super(MCAv4, self).__init__()
+        f = n_feats // 4
+
+        # down scale and up scale
+        self.reduct_h = nn.Conv1d(n_feats, f, kernel_size=3, padding=1, bias=True)
+        self.expansion_h = nn.Conv1d(f, n_feats, kernel_size=3, padding=1, bias=True)
+        self.reduct_w = nn.Conv1d(n_feats, f, kernel_size=3, padding=1, bias=True)
+        self.expansion_w = nn.Conv1d(f, n_feats, kernel_size=3, padding=1, bias=True)
+        self.relu = nn.ReLU(inplace=True)
+        self.sigmoid = nn.Sigmoid()
+
+        # fuse
+        self.fuse = conv(3*n_feats, n_feats, kernel_size=1)
+
+    def forward(self, x):
+        n, c, h, w = x.size()
+
+        # fetch h, w feature
+        # n, c, h, 1
+        hf = F.adaptive_avg_pool2d(x, output_size=(h, 1))
+        hf = self.reduct_h(hf.squeeze(-1)).unsqueeze(-1)
+        hf = self.relu(hf)
+        hf = self.expansion_h(hf.squeeze(-1)).unsqueeze(-1)
+        hf = self.sigmoid(hf)
+        
+        # n, c, 1, w
+        wf = F.adaptive_avg_pool2d(x, output_size=(1, w))
+        wf = self.reduct_w(wf.squeeze(-2)).unsqueeze(-2)
+        wf = self.relu(wf)
+        wf = self.expansion_w(wf.squeeze(-2)).unsqueeze(-2)
+        wf = self.sigmoid(wf)
+
+        # concate all features
+        x_fuse = torch.cat([x * hf.expand_as(x), x * wf.expand_as(x), x], dim=1)
+        out = self.fuse(x_fuse)
+
+        return out
 
 class E_RFDB(nn.Module):
     def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):

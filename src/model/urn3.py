@@ -9,7 +9,7 @@ from model.block_rfdn import *
 def make_model(args, parent=False):
     return URN3(args)
 
-# backbone ESA -> MCA
+# backbone ESA -> MCA -> CCA
 class URN3(nn.Module):
     def __init__(self, args):
         super(URN3, self).__init__()
@@ -24,17 +24,17 @@ class URN3(nn.Module):
         down = []
         for p in range(4):
             if p == 3:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, att=MCAv2))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, att=CCALayer))
             else:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, att=MCAv2))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, att=CCALayer))
         self.down = nn.ModuleList(down)
 
         up = []
         for p in range(4):
             if p == 3:
-                up.append(E_RFDB(nf // channels[3 - p], nf, att=MCAv2))
+                up.append(E_RFDB(nf // channels[3 - p], nf, att=CCALayer))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, att=MCAv2))
+                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, att=CCALayer))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)

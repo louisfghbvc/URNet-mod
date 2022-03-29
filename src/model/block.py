@@ -2,7 +2,7 @@ import torch.nn.functional as F
 import torch
 import torch.nn as nn
 
-from model.block_rfdn import E_RFDB, E_RFDB_Share, ESA, MCA
+from model.block_rfdn import *
 
 
 class CropLayer(nn.Module):

@@ -104,6 +104,23 @@ def sequential(*args):
             modules.append(module)
     return nn.Sequential(*modules)
 
+# compute channel mean, max
+class ChannelPool(nn.Module):
+    def forward(self, x):
+        return torch.cat( (torch.max(x,1)[0].unsqueeze(1), torch.mean(x,1).unsqueeze(1)), dim=1 )
+
+class SpatialGate(nn.Module):
+    def __init__(self):
+        super(SpatialGate, self).__init__()
+        kernel_size = 7
+        self.compress = ChannelPool()
+        self.spatial = common.default_conv(2, 1, kernel_size)
+    def forward(self, x):
+        x_compress = self.compress(x)
+        x_out = self.spatial(x_compress)
+        scale = F.sigmoid(x_out) # broadcasting
+        return x * scale
+
 # contrast-aware channel attention module
 class CCALayer(nn.Module):
     def __init__(self, channel, conv, reduction=4):
@@ -118,11 +135,42 @@ class CCALayer(nn.Module):
             nn.Sigmoid()
         )
 
-
     def forward(self, x):
         y = self.contrast(x) + self.avg_pool(x)
         y = self.conv_du(y)
         return x * y
+
+# CCA + SA
+class CBAM(nn.Module):
+    def __init__(self, gate_channels, conv, reduction_ratio=4, no_spatial=False):
+        super(CBAM, self).__init__()
+        self.ChannelGate = CCALayer(gate_channels, conv, reduction_ratio)
+        self.no_spatial = no_spatial
+        if not no_spatial:
+            self.SpatialGate = SpatialGate()
+    def forward(self, x):
+        x_out = self.ChannelGate(x)
+        if not self.no_spatial:
+            x_out = self.SpatialGate(x_out)
+        return x_out
+
+# CCA + SA
+class RAMm(nn.Module):
+    def __init__(self, n_feats, conv, reduction=4):
+        super(RAMm, self).__init__()
+        self.ca = CCALayer(n_feats, conv, reduction=reduction)
+        self.sa = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=7, stride=3)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # b c h w -> b 1 h w
+        sa_mean = torch.mean(x, 1).unsqueeze(1)
+        ca = self.ca(x)
+        sa = self.sa(sa_mean)
+        sa = F.interpolate(sa, (x.size(2), x.size(3)), mode='bilinear', align_corners=False)
+        att = ca + sa
+        att = self.sigmoid(att)
+        return x * att
 
 # contrast-aware channel attention module + ECA, cur fix 3
 class ECCALayer(nn.Module):
@@ -167,36 +215,16 @@ class ESA(nn.Module):
         c4 = self.conv4(c3+cf)
         m = self.sigmoid(c4)
         
-        return x * m
+        return x + x * m
 
 # fuse ECCA
 class ESAv2(nn.Module):
     def __init__(self, n_feats, conv):
         super(ESAv2, self).__init__()
-        f = n_feats // 4
-        self.conv1 = conv(n_feats, f, kernel_size=1)
-        self.conv_f = conv(f, f, kernel_size=1)
-        self.conv_max = conv(f, f, kernel_size=3, padding=1)
-        self.conv2 = conv(f, f, kernel_size=3, stride=2, padding=0)
-        self.conv3 = conv(f, f, kernel_size=3, padding=1)
-        self.conv3_ = conv(f, f, kernel_size=3, padding=1)
-        self.conv4 = conv(f, n_feats, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
-        self.relu = nn.ReLU(inplace=True)
+        
 
     def forward(self, x):
-        c1_ = (self.conv1(x))
-        c1 = self.conv2(c1_)
-        v_max = F.max_pool2d(c1, kernel_size=7, stride=3)
-        v_range = self.relu(self.conv_max(v_max))
-        c3 = self.relu(self.conv3(v_range))
-        c3 = self.conv3_(c3)
-        c3 = F.interpolate(c3, (x.size(2), x.size(3)), mode='bilinear', align_corners=False) 
-        cf = self.conv_f(c1_)
-        c4 = self.conv4(c3+cf)
-        m = self.sigmoid(c4)
-        
-        return x * m
+        return x
 
 # high frequency attention tweak
 class MCA(nn.Module):

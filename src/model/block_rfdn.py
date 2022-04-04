@@ -172,6 +172,21 @@ class RAMm(nn.Module):
         att = self.sigmoid(att)
         return x * att
 
+# pure SA
+class SA(nn.Module):
+    def __init__(self, n_feats, conv, reduction=4):
+        super(SA, self).__init__()
+        self.sa = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=7, stride=3)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # b c h w -> b 1 h w
+        sa_mean = torch.mean(x, 1).unsqueeze(1)
+        sa = self.sa(sa_mean)
+        sa = F.interpolate(sa, (x.size(2), x.size(3)), mode='bilinear', align_corners=False)
+        att = self.sigmoid(sa)
+        return x * att
+
 # contrast-aware channel attention module + ECA, cur fix 3
 class ECCALayer(nn.Module):
     def __init__(self, kernel_size, conv, reduction=4):

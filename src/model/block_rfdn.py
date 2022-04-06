@@ -172,6 +172,24 @@ class RAMm(nn.Module):
         att = self.sigmoid(att)
         return x * att
 
+# ECCA + SA
+class RAMm2(nn.Module):
+    def __init__(self, n_feats, conv, reduction=4):
+        super(RAMm2, self).__init__()
+        self.ca = ECCALayer(n_feats, conv, reduction=reduction)
+        self.sa = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=7, stride=3)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # b c h w -> b 1 h w
+        sa_mean = torch.mean(x, 1).unsqueeze(1)
+        ca = self.ca(x)
+        sa = self.sa(sa_mean)
+        sa = F.interpolate(sa, (x.size(2), x.size(3)), mode='bilinear', align_corners=False)
+        att = ca + sa
+        att = self.sigmoid(att)
+        return x * att
+
 # pure SA
 class SA(nn.Module):
     def __init__(self, n_feats, conv, reduction=4):

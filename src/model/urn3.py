@@ -24,17 +24,17 @@ class URN3(nn.Module):
         down = []
         for p in range(4):
             if p == 3:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, att=SA))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, att=RAMm3))
             else:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, att=SA))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, att=RAMm3))
         self.down = nn.ModuleList(down)
 
         up = []
         for p in range(4):
             if p == 3:
-                up.append(E_RFDB(nf // channels[3 - p], nf, att=SA))
+                up.append(E_RFDB(nf // channels[3 - p], nf, att=RAMm3))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, att=SA))
+                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, att=RAMm3))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)

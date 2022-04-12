@@ -172,6 +172,25 @@ class RAMm(nn.Module):
         att = self.sigmoid(att)
         return x * att
 
+# CCA + SA, multiply
+class IRAMm(nn.Module):
+    def __init__(self, n_feats, conv, reduction=4):
+        super(IRAMm, self).__init__()
+        self.ca = CCALayer(n_feats, conv, reduction=reduction)
+        self.sa = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=7, stride=3)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # b c h w -> b 1 h w
+        sa_mean = torch.mean(x, 1).unsqueeze(1)
+        ca = self.ca(x)
+        sa = self.sa(sa_mean)
+        sa = F.interpolate(sa, (x.size(2), x.size(3)), mode='bilinear', align_corners=False)
+        att = ca * sa
+        att = self.sigmoid(att)
+        return x * att
+
+
 # ECCA + SA
 class RAMm2(nn.Module):
     def __init__(self, n_feats, conv, reduction=4):
@@ -186,6 +205,22 @@ class RAMm2(nn.Module):
         ca = self.ca(x)
         sa = self.sa(sa_mean)
         sa = F.interpolate(sa, (x.size(2), x.size(3)), mode='bilinear', align_corners=False)
+        att = ca + sa
+        att = self.sigmoid(att)
+        return x * att
+
+# CCA + ESA
+class RAMm3(nn.Module):
+    def __init__(self, n_feats, conv, reduction=4):
+        super(RAMm3, self).__init__()
+        self.ca = CCALayer(n_feats, conv, reduction=reduction)
+        self.sa = ESA(n_feats, conv)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        # b c h w -> b 1 h w
+        ca = self.ca(x)
+        sa = self.sa(x)
         att = ca + sa
         att = self.sigmoid(att)
         return x * att
@@ -443,6 +478,55 @@ class E_RFDB(nn.Module):
 
         out = torch.cat([distilled_c1, distilled_c2, distilled_c3, r_c4], dim=1)
         out_fused = self.esa(self.c5(out))
+
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        if self.add:
+            return out_fused + input
+        else:
+            return out_fused
+
+# E_RFDB Unet
+class E_RFDB_U(nn.Module):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
+        super(E_RFDB_U, self).__init__()
+        self.add = add
+        self.shuffle = shuffle
+
+        # distillation channel
+        self.dc = in_channels//2
+        # remaining channel
+        self.rc = in_channels
+
+        self.c1_d = conv_layer(in_channels, self.dc, 1)
+        self.c1_r = conv_layer(in_channels, self.rc, 3)
+        self.c2 = conv_layer(self.rc, self.rc, 3)
+        self.c3 = conv_layer(2*self.rc, self.rc, 3)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.catlayer = conv_layer(self.dc*3, in_channels, 1)
+        self.esa = att(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        if self.shuffle: # channel shuffle
+            input = common.channel_shuffle(input, 2)
+
+        distilled_c1 = self.act(self.c1_d(input))
+        # c1 srn
+        r_c1 = self.c1_r(input)
+        r_c1 = self.act(r_c1+input)
+
+        # c2 srn
+        r_c2 = (self.c2(r_c1))
+        r_c2 = self.act(r_c2+r_c1)
+
+        # c3 srn
+        tmp_fuse = torch.cat([r_c1, r_c2], dim=1)
+        r_c3 = self.c3(tmp_fuse)
+        r_c3 = self.act(tmp_fuse + r_c3)
+
+        out = torch.cat([distilled_c1, r_c3], dim=1)
+        out_fused = self.esa(self.catlayer(out))
 
         if self.shuffle: # channel shuffle
             out_fused = common.channel_shuffle(out_fused, 2)

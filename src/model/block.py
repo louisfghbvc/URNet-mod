@@ -77,7 +77,7 @@ class ACBlock(nn.Module):
 
             return square_outputs + vertical_outputs + horizontal_outputs
 
-
+# TODO: modify
 class CFPB(nn.Module):
     def __init__(self, channel, res=False, fuse=True):
         super(CFPB, self).__init__()
@@ -127,7 +127,7 @@ class RFDBBlock(nn.Module):
     def forward(self, x):
         return self.block(x)
 
-
+# TODO: modify
 class FDPRG(nn.Module):
     def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False, bone=E_RFDB, att=ESA):  # n_RG=4
         super(FDPRG, self).__init__()
@@ -245,6 +245,46 @@ class ANRB(nn.Module):
         context = context.permute(0, 2, 1).contiguous()
         context = context.view(batch_size, 1, h, w)
         context = self.W(context)
+        context += x
+        return context
+
+class ANRB_Conv(nn.Module):
+    def __init__(self, in_channels, psp_size=(1, 3, 6, 8)):
+        super(ANRB_Conv, self).__init__()
+        self.in_channels = in_channels
+        self.f_query = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=7)
+        self.f_key = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=7)
+        self.f_value = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=7)
+
+        self.W = nn.Conv2d(in_channels=1, out_channels=self.in_channels, kernel_size=1)
+        nn.init.constant_(self.W.weight, 0)
+        nn.init.constant_(self.W.bias, 0)
+
+    def forward(self, x):
+        batch_size, h, w = x.size(0), x.size(2), x.size(3)
+
+        # query: Nx1xHxW -> Nx1xHW
+        query = self.f_query(x).view(batch_size, 1, -1)
+        # Nx1xHW -> NxHWx1
+        query = query.permute(0, 2, 1)
+
+        # key：Nx1xHW
+        key = self.f_key(x)
+
+        # value: Nx1xHW
+        value = self.f_value(x)
+        value = value.permute(0, 2, 1)
+
+        sim_map = torch.matmul(query, key)
+        # no normalize?
+        sim_map = (1 ** -.5) * sim_map
+        sim_map = F.softmax(sim_map, dim=-1)
+
+        context = torch.matmul(sim_map, value)
+        context = context.permute(0, 2, 1).contiguous()
+        context = context.view(batch_size, 1, h, w)
+        context = self.W(context)
+        context = F.interpolate(context, (h, w), mode='bilinear', align_corners=False) 
         context += x
         return context
 

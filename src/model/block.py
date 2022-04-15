@@ -109,6 +109,27 @@ class CFPB(nn.Module):
             out += x
         return out
 
+class PPM(nn.Module):
+    # (1, 2, 3, 6)
+    def __init__(self, in_dim, bins=(1, 3, 6, 8)):
+        super(PPM, self).__init__()
+        reduction_dim = int(in_dim/len(bins))
+        self.features = []
+        for bin in bins:
+            self.features.append(nn.Sequential(
+                nn.AdaptiveAvgPool2d(bin),
+                nn.Conv2d(in_dim, reduction_dim, kernel_size=1, bias=False),
+                # nn.BatchNorm2d(reduction_dim),
+                nn.ReLU(inplace=True)
+            ))
+        self.features = nn.ModuleList(self.features)
+
+    def forward(self, x):
+        x_size = x.size()
+        out = [x]
+        for f in self.features:
+            out.append(F.interpolate(f(x), x_size[2:], mode='bilinear', align_corners=True))
+        return torch.cat(out, 1)
 
 class RFDBBlock(nn.Module):
     def __init__(self, in_channels, out_channels, ver=False, tail=False, add=False, shuffle=False, bone=E_RFDB, att=ESA):
@@ -130,7 +151,7 @@ class RFDBBlock(nn.Module):
 
 # TODO: modify
 class FDPRG(nn.Module):
-    def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False, bone=E_RFDB, att=ESA):  # n_RG=4
+    def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False, bone=E_RFDB, att=ESA, cbone=CFPB):  # n_RG=4
         super(FDPRG, self).__init__()
         
         self.scale = scale
@@ -152,10 +173,8 @@ class FDPRG(nn.Module):
         self.m3 = bone(channels, shuffle=shuffle, att=att)
         self.w_m3 = nn.Parameter(torch.FloatTensor(1), requires_grad=True)
         self.w_m3.data.fill_(1.0)
-        if self.scale != 3:
-            self.aspp = CFPB(channels)
-        else:
-            self.cfpb = CFPB(channels)
+            
+        self.cfpb = cbone(channels)
 
         self.conv = nn.Conv2d(channels, channels, 3, padding=1, bias=bias)
 
@@ -170,10 +189,7 @@ class FDPRG(nn.Module):
         res3 = self.m3(res2)
         res3 = res3 + self.w_m3 * res2
         out = res3 + self.w1 * res1 + self.w2 * x
-        if self.scale != 3:
-            out = self.aspp(out)
-        else:
-            out = self.cfpb(out)
+        out = self.cfpb(out)
         out = self.conv(out)
         out += x
         return out
@@ -492,6 +508,6 @@ class DoubleAttention(nn.Module):
 
         tmpZ = tmpZ.view(b, 1, h, w) # b, c_m, h, w
         tmpZ = self.conv_reconstruct(tmpZ)
-        
+
         return x + tmpZ 
 

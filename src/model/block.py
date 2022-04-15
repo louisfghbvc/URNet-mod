@@ -123,13 +123,37 @@ class PPM(nn.Module):
                 nn.ReLU(inplace=True)
             ))
         self.features = nn.ModuleList(self.features)
+        self.fuse = nn.Conv2d(in_dim * 2, in_dim, kernel_size=1)
 
     def forward(self, x):
         x_size = x.size()
         out = [x]
         for f in self.features:
             out.append(F.interpolate(f(x), x_size[2:], mode='bilinear', align_corners=True))
-        return torch.cat(out, 1)
+        return self.fuse(torch.cat(out, 1)) 
+
+# no fuse, use residual
+class PPMv2(nn.Module):
+    # (1, 2, 3, 6)
+    def __init__(self, in_dim, bins=(1, 3, 6, 8)):
+        super(PPMv2, self).__init__()
+        reduction_dim = int(in_dim/len(bins))
+        self.features = []
+        for bin in bins:
+            self.features.append(nn.Sequential(
+                nn.AdaptiveAvgPool2d(bin),
+                nn.Conv2d(in_dim, reduction_dim, kernel_size=1, bias=False),
+                # nn.BatchNorm2d(reduction_dim),
+                nn.ReLU(inplace=True)
+            ))
+        self.features = nn.ModuleList(self.features)
+
+    def forward(self, x):
+        x_size = x.size()
+        out = []
+        for f in self.features:
+            out.append(F.interpolate(f(x), x_size[2:], mode='bilinear', align_corners=True))
+        return x + torch.cat(out, dim=1)
 
 class RFDBBlock(nn.Module):
     def __init__(self, in_channels, out_channels, ver=False, tail=False, add=False, shuffle=False, bone=E_RFDB, att=ESA):

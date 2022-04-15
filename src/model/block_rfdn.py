@@ -327,6 +327,44 @@ class ESAv2(nn.Module):
         
         return x * m
 
+# fuse CCA
+class ESAv3(nn.Module):
+    def __init__(self, n_feats, conv):
+        super(ESAv3, self).__init__()
+
+        f = n_feats // 4
+        self.conv1 = conv(n_feats, f, kernel_size=1)
+        self.conv_f = conv(f, f, kernel_size=1)
+        self.conv_max = conv(f, f, kernel_size=3, padding=1)
+        self.conv2 = conv(f, f, kernel_size=3, stride=2, padding=0)
+        self.conv3 = conv(f, f, kernel_size=3, padding=1)
+        self.conv3_ = conv(f, f, kernel_size=3, padding=1)
+        self.conv4 = conv(f, n_feats, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+        self.relu = nn.ReLU(inplace=True)
+
+        # CCA
+        self.contrast = stdv_channels
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+
+    def forward(self, x):
+        # channel pool and std
+        y = self.contrast(x) + self.avg_pool(x)
+
+        c1_ = (self.conv1(x))
+        c1 = self.conv2(c1_)
+        v_max = F.max_pool2d(c1, kernel_size=7, stride=3)
+        v_range = self.relu(self.conv_max(v_max))
+        c3 = self.relu(self.conv3(v_range))
+        c3 = self.conv3_(c3)
+        c3 = F.interpolate(c3, (x.size(2), x.size(3)), mode='bilinear', align_corners=False) 
+        cf = self.conv_f(c1_)
+        c4 = self.conv4(c3+cf)
+
+        m = self.sigmoid(c4)
+        
+        return x * m
+
 # high frequency attention tweak
 class MCA(nn.Module):
     def __init__(self, n_feats, conv):

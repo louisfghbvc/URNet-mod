@@ -1,6 +1,7 @@
 import torch.nn.functional as F
 import torch
 import torch.nn as nn
+from torch.nn import init
 
 from model.block_rfdn import *
 
@@ -257,8 +258,7 @@ class ANRB_Conv(nn.Module):
         self.f_value = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=7)
 
         self.W = nn.Conv2d(in_channels=1, out_channels=self.in_channels, kernel_size=1)
-        nn.init.constant_(self.W.weight, 0)
-        nn.init.constant_(self.W.bias, 0)
+        self.init_weights()
 
     def forward(self, x):
         batch_size, h, w = x.size(0), x.size(2), x.size(3)
@@ -271,8 +271,9 @@ class ANRB_Conv(nn.Module):
         # key：Nx1xHW
         key = self.f_key(x)
 
-        # value: Nx1xHW
+        # value: Nx1xHW -> NxHWx1
         value = self.f_value(x)
+        value = value.view(batch_size, 1, -1)
         value = value.permute(0, 2, 1)
 
         sim_map = torch.matmul(query, key)
@@ -287,6 +288,20 @@ class ANRB_Conv(nn.Module):
         context = F.interpolate(context, (h, w), mode='bilinear', align_corners=False) 
         context += x
         return context
+    
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_normal_(m.weight, mode='fan_out')
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                init.normal_(m.weight, std=0.001)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
 
 class ANRB_P(nn.Module):
     def __init__(self, in_channels, scale=1, psp_size=(1, 3, 6, 8)):
@@ -422,3 +437,61 @@ class ASMLP(nn.Module):
         out = self.fuse(x_fuse)
 
         return self.expansion(x)
+
+# add PSP, channel to 1
+class DoubleAttention(nn.Module):
+    def __init__(self, in_channels, psp_size=(1, 3, 6, 8)):
+        super().__init__()
+        self.in_channels = in_channels
+        self.reconstruct = reconstruct
+        self.convA = nn.Conv2d(in_channels, 1, 1)
+        self.convB = nn.Conv2d(in_channels, 1, 1)
+        self.convV = nn.Conv2d(in_channels, 1, 1)
+        self.psp = PSPModule(psp_size)
+        self.conv_reconstruct = nn.Conv2d(1, in_channels, kernel_size = 1)
+        self.init_weights()
+
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_normal_(m.weight, mode='fan_out')
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                init.normal_(m.weight, std=0.001)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+    
+    def forward(self, x):
+        b, c, h, w = x.shape
+        assert c == self.in_channels
+        A = self.convA(x)
+        B = self.convB(x)
+        V = self.convV(x)
+
+        # b 1 h w -> b 1 h*w
+        # b 1 h*w -> b 1 s
+        tmpA = A.view(b, 1, -1)
+        tmpA = self.psp(tmpA)
+
+        # b 1 h*w -> b 1 s
+        B = self.psp(B.view(b, 1, -1))
+
+        attention_maps = F.softmax(B, dim=-1)
+        attention_vectors = F.softmax(V.view(b, 1, -1), dim=-1)
+
+        # step 1: feature gating
+        # b 1 s x b s 1 -> b 1 1
+        global_descriptors = torch.bmm(tmpA, attention_maps.permute(0, 2, 1))
+
+        # step 2: feature distribution
+        tmpZ = global_descriptors.matmul(attention_vectors)
+
+        tmpZ = tmpZ.view(b, 1, h, w) # b, c_m, h, w
+        tmpZ = self.conv_reconstruct(tmpZ)
+        
+        return x + tmpZ 
+

@@ -39,7 +39,7 @@ class URN4(nn.Module):
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)
-        self.anrb = ANRB_Conv(nf)
+        self.anrb = DoubleAttention(nf)
 
         self.tail_up = pixelshuffle_block(nf, args.n_colors, upscale_factor=scale)
 

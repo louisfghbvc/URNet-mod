@@ -109,6 +109,7 @@ class CFPB(nn.Module):
             out += x
         return out
 
+# fuse
 class PPM(nn.Module):
     # (1, 2, 3, 6)
     def __init__(self, in_dim, bins=(1, 3, 6, 8)):
@@ -218,13 +219,13 @@ class FDPRG(nn.Module):
         out += x
         return out
 
-
-# Sampling method in ANRB
+# Sampling method in ANRB, add softmax
 class PSPModule(nn.Module):
     # (1, 2, 3, 6)
-    def __init__(self, sizes=(1, 3, 6, 8), dimension=2):
+    def __init__(self, sizes=(1, 3, 6, 8), dimension=2, soft=False):
         super(PSPModule, self).__init__()
         self.stages = nn.ModuleList([self._make_stage(size, dimension) for size in sizes])
+        self.soft = soft
 
     def _make_stage(self, size, dimension=2):
         if dimension == 1:
@@ -237,10 +238,11 @@ class PSPModule(nn.Module):
 
     def forward(self, feats):
         n, c, _, _ = feats.size()
-        priors = [stage(feats).view(n, c, -1) for stage in self.stages]
+        priors = []
+        for stage in self.stages:
+            priors += F.softmax(stage(feats), dim=-1) if self.soft else stage(feats),
         center = torch.cat(priors, -1)
         return center
-
 
 class ANRB(nn.Module):
     def __init__(self, in_channels, scale=1, psp_size=(1, 3, 6, 8)):
@@ -281,6 +283,51 @@ class ANRB(nn.Module):
         # no normalize?
         sim_map = (1 ** -.5) * sim_map
         sim_map = F.softmax(sim_map, dim=-1)
+
+        context = torch.matmul(sim_map, value)
+        context = context.permute(0, 2, 1).contiguous()
+        context = context.view(batch_size, 1, h, w)
+        context = self.W(context)
+        context += x
+        return context
+
+# sampling method use soft max
+class ANRBsoft(nn.Module):
+    def __init__(self, in_channels, scale=1, psp_size=(1, 3, 6, 8)):
+        super(ANRBsoft, self).__init__()
+        self.scale = scale
+        self.in_channels = in_channels
+        self.pool = nn.MaxPool2d(kernel_size=(scale, scale))
+        self.f_query = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=1)
+        self.f_key = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=1)
+        self.f_value = nn.Conv2d(in_channels=self.in_channels, out_channels=1, kernel_size=1)
+
+        self.psp = PSPModule(psp_size, soft=True)
+
+        self.W = nn.Conv2d(in_channels=1, out_channels=self.in_channels, kernel_size=1)
+        nn.init.constant_(self.W.weight, 0)
+        nn.init.constant_(self.W.bias, 0)
+
+    def forward(self, x):
+        batch_size, h, w = x.size(0), x.size(2), x.size(3)
+        if self.scale > 1:
+            x = self.pool(x)
+
+        # query: Nx1xHxW -> Nx1xHW
+        query = self.f_query(x).view(batch_size, 1, -1)
+        # Nx1xHW -> NxHWx1
+        query = query.permute(0, 2, 1)
+
+        # key：Nx1xS
+        key = self.f_key(x)
+        key = self.psp(key)
+
+        # value: Nx1xHW -> Nx1xS （S = 110）
+        value = self.psp(self.f_value(x))
+        # Nx1xS -> NxSx1 （S = 110）
+        value = value.permute(0, 2, 1)
+
+        sim_map = torch.matmul(query, key)
 
         context = torch.matmul(sim_map, value)
         context = context.permute(0, 2, 1).contiguous()
@@ -483,7 +530,6 @@ class DoubleAttention(nn.Module):
     def __init__(self, in_channels, psp_size=(1, 3, 6, 8)):
         super().__init__()
         self.in_channels = in_channels
-        self.reconstruct = reconstruct
         self.convA = nn.Conv2d(in_channels, 1, 1)
         self.convB = nn.Conv2d(in_channels, 1, 1)
         self.convV = nn.Conv2d(in_channels, 1, 1)
@@ -512,20 +558,18 @@ class DoubleAttention(nn.Module):
         B = self.convB(x)
         V = self.convV(x)
 
-        # b 1 h w -> b 1 h*w
-        # b 1 h*w -> b 1 s
-        tmpA = A.view(b, 1, -1)
-        tmpA = self.psp(tmpA)
+        # b 1 h w -> b 1 s
+        A = self.psp(A)
 
-        # b 1 h*w -> b 1 s
-        B = self.psp(B.view(b, 1, -1))
+        # b 1 h w -> b 1 s
+        B = self.psp(B)
 
         attention_maps = F.softmax(B, dim=-1)
         attention_vectors = F.softmax(V.view(b, 1, -1), dim=-1)
 
         # step 1: feature gating
         # b 1 s x b s 1 -> b 1 1
-        global_descriptors = torch.bmm(tmpA, attention_maps.permute(0, 2, 1))
+        global_descriptors = torch.bmm(A, attention_maps.permute(0, 2, 1))
 
         # step 2: feature distribution
         tmpZ = global_descriptors.matmul(attention_vectors)

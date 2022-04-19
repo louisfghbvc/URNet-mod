@@ -240,7 +240,10 @@ class PSPModule(nn.Module):
         n, c, _, _ = feats.size()
         priors = []
         for stage in self.stages:
-            priors += F.softmax(stage(feats), dim=-1) if self.soft else stage(feats),
+            tmp = stage(feats).view(n, c, -1)
+            if self.soft:
+                tmp = F.softmax(tmp, dim=-1)
+            priors += tmp,
         center = torch.cat(priors, -1)
         return center
 
@@ -305,8 +308,7 @@ class ANRBsoft(nn.Module):
         self.psp = PSPModule(psp_size, soft=True)
 
         self.W = nn.Conv2d(in_channels=1, out_channels=self.in_channels, kernel_size=1)
-        nn.init.constant_(self.W.weight, 0)
-        nn.init.constant_(self.W.bias, 0)
+        self.init_weights()
 
     def forward(self, x):
         batch_size, h, w = x.size(0), x.size(2), x.size(3)
@@ -335,6 +337,20 @@ class ANRBsoft(nn.Module):
         context = self.W(context)
         context += x
         return context
+    
+    def init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                init.kaiming_normal_(m.weight, mode='fan_out')
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+            elif isinstance(m, nn.BatchNorm2d):
+                init.constant_(m.weight, 1)
+                init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                init.normal_(m.weight, std=0.001)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
 
 class ANRB_Conv(nn.Module):
     def __init__(self, in_channels, psp_size=(1, 3, 6, 8)):

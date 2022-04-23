@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from model import common
-from model.block import FDPRG, RFDBBlock, ANRB, ACBlock
+from model.block import *
 from model.block_rfdn import *
 
 
@@ -24,17 +24,17 @@ class URN3(nn.Module):
         down = []
         for p in range(4):
             if p == 3:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, att=ESAv2))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=E_RFDB1x1))
             else:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, att=ESAv2))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=E_RFDB1x1))
         self.down = nn.ModuleList(down)
 
         up = []
         for p in range(4):
             if p == 3:
-                up.append(E_RFDB(nf // channels[3 - p], nf, att=ESAv2))
+                up.append(E_RFDB1x1(nf // channels[3 - p], nf))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, att=ESAv2))
+                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, bone=E_RFDB1x1))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)

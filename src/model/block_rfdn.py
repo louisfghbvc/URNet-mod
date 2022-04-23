@@ -70,6 +70,29 @@ def activation(act_type, inplace=True, neg_slope=0.05, n_prelu=1):
     return layer
 
 
+# no fuse, use residual
+class PPMv2(nn.Module):
+    # (1, 2, 3, 6)
+    def __init__(self, in_dim, bins=(1, 3, 6, 8)):
+        super(PPMv2, self).__init__()
+        reduction_dim = int(in_dim/len(bins))
+        self.features = []
+        for bin in bins:
+            self.features.append(nn.Sequential(
+                nn.AdaptiveAvgPool2d(bin),
+                nn.Conv2d(in_dim, reduction_dim, kernel_size=1, bias=False),
+                # nn.BatchNorm2d(reduction_dim),
+                nn.ReLU(inplace=True)
+            ))
+        self.features = nn.ModuleList(self.features)
+
+    def forward(self, x):
+        x_size = x.size()
+        out = []
+        for f in self.features:
+            out.append(F.interpolate(f(x), x_size[2:], mode='bilinear', align_corners=True))
+        return x + torch.cat(out, dim=1)
+
 class ShortcutBlock(nn.Module):
     def __init__(self, submodule):
         super(ShortcutBlock, self).__init__()
@@ -754,46 +777,49 @@ class E_RFDB_ShareV2(nn.Module):
             return out_fused + input
         else:
             return out_fused
-# 
-class E_RFDDB(nn.Module):
+
+# residual ppm distillation block: use ppm as srn only first layer, and only down sample
+class E_RPPMDB(nn.Module):
     def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
-        super(E_RFDDB, self).__init__()
+        super(E_RPPMDB, self).__init__()
         self.add = add
-        self.shuffle = shuffle
-        self.conv1 = conv_layer(in_channels, in_channels, 1)
+
+        self.distilled_channels = in_channels//2
+        self.remaining_channels = in_channels
+
+        # distilled 1
+        self.c1_d = conv_layer(in_channels, self.distilled_channels, 1)
+        self.c1_r = PPMv2(self.remaining_channels)
+
+        # distilled 2
+        self.c2_d = conv_layer(self.remaining_channels, self.distilled_channels, 1)
+        self.c2_r = conv_layer(in_channels, self.remaining_channels, 1)
+
+        # distilled 3
+        self.c3_d = conv_layer(self.remaining_channels, self.distilled_channels, 1)
+        self.c3_r = conv_layer(in_channels, self.remaining_channels, 1)
+
+        self.c4_d = conv_layer(in_channels, self.distilled_channels, 1)
+        self.fuse = conv_layer(self.distilled_channels*4, in_channels, 1)
         self.act = activation('lrelu', neg_slope=0.05)
         self.esa = ESA(in_channels, nn.Conv2d)
 
     def forward(self, input):
-        if self.shuffle: # channel shuffle
-            input = common.channel_shuffle(input, 2)
+        distilled_c1 = self.act(self.c1_d(input))
+        r_c1 = self.c1_r(input)
 
-        level1_f = self.conv1(input)
-        sub_1 = self.act(input - level1_f)
-        res_1 = self.act(input + level1_f)
+        distilled_c2 = self.act(self.c2_d(r_c1))
+        r_c2 = self.c2_r(r_c1)
+        r_c2 = self.act(r_c1 + r_c2)
 
-        if self.shuffle: # channel shuffle
-            out_fused = common.channel_shuffle(out_fused, 2)
+        distilled_c3 = self.act(self.c3_d(r_c2))
+        r_c3 = self.c3_r(r_c2)
+        r_c3 = self.act(r_c2 + r_c3)
 
-        if self.add:
-            return out_fused + input
-        else:
-            return out_fused
+        distilled_c4 = self.act(self.c4_d(r_c3))
 
-# use ppm
-class E_RFDB_PPM(nn.Module):
-    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
-        super(E_RFDB_PPM, self).__init__()
-        self.add = add
-        self.shuffle = shuffle
-        self.esa = ESA(in_channels, nn.Conv2d)
-
-    def forward(self, input):
-        if self.shuffle: # channel shuffle
-            input = common.channel_shuffle(input, 2)
-
-        if self.shuffle: # channel shuffle
-            out_fused = common.channel_shuffle(out_fused, 2)
+        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, distilled_c4], dim=1)
+        out_fused = self.esa(self.fuse(out))
 
         if self.add:
             return out_fused + input

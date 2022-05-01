@@ -583,7 +583,7 @@ class E_RFDB(nn.Module):
 
 # 1x1 convolution 
 class E_RFDB1x1(nn.Module):
-    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
+    def __init__(self, in_channels, distillation_rate=0.25, add=True, shuffle=False, att=ESA):
         super(E_RFDB1x1, self).__init__()
         self.add = add
         self.shuffle = shuffle
@@ -599,6 +599,54 @@ class E_RFDB1x1(nn.Module):
         self.act = activation('lrelu', neg_slope=0.05)
         self.c5 = conv_layer(self.dc*4, in_channels, 1)
         self.esa = att(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        if self.shuffle: # channel shuffle
+            input = common.channel_shuffle(input, 2)
+
+        distilled_c1 = self.act(self.c1_d(input))
+        r_c1 = (self.c1_r(input))
+        r_c1 = self.act(r_c1+input)
+
+        distilled_c2 = self.act(self.c2_d(r_c1))
+        r_c2 = (self.c2_r(r_c1))
+        r_c2 = self.act(r_c2+r_c1)
+
+        distilled_c3 = self.act(self.c3_d(r_c2))
+        r_c3 = (self.c3_r(r_c2))
+        r_c3 = self.act(r_c3+r_c2)
+
+        r_c4 = self.act(self.c4(r_c3))
+
+        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, r_c4], dim=1)
+        out_fused = self.esa(self.c5(out))
+
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        if self.add:
+            return out_fused + input
+        else:
+            return out_fused
+
+# down sample directly
+class E_RFDDB1x1(nn.Module):
+    def __init__(self, in_channels, out_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
+        super(E_RFDDB1x1, self).__init__()
+        self.add = add
+        self.shuffle = shuffle
+        self.dc = self.distilled_channels = in_channels//2
+        self.rc = self.remaining_channels = in_channels
+        self.c1_d = conv_layer(in_channels, self.dc, 1)
+        self.c1_r = conv_layer(in_channels, self.rc, 1)
+        self.c2_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c2_r = conv_layer(self.remaining_channels, self.rc, 1)
+        self.c3_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c3_r = conv_layer(self.remaining_channels, self.rc, 1)
+        self.c4 = conv_layer(self.remaining_channels, self.dc, 1)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.c5 = conv_layer(self.dc*4, out_channels, 1)
+        self.esa = att(out_channels, nn.Conv2d)
 
     def forward(self, input):
         if self.shuffle: # channel shuffle
@@ -778,53 +826,6 @@ class E_RFDB_ShareV2(nn.Module):
         else:
             return out_fused
 
-# residual ppm distillation block: use ppm as srn only first layer, and only down sample
-class E_RPPMDB(nn.Module):
-    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
-        super(E_RPPMDB, self).__init__()
-        self.add = add
-
-        self.distilled_channels = in_channels//2
-        self.remaining_channels = in_channels
-
-        # distilled 1
-        self.c1_d = conv_layer(in_channels, self.distilled_channels, 1)
-        self.c1_r = PPMv2(self.remaining_channels)
-
-        # distilled 2
-        self.c2_d = conv_layer(self.remaining_channels, self.distilled_channels, 1)
-        self.c2_r = conv_layer(in_channels, self.remaining_channels, 1)
-
-        # distilled 3
-        self.c3_d = conv_layer(self.remaining_channels, self.distilled_channels, 1)
-        self.c3_r = conv_layer(in_channels, self.remaining_channels, 1)
-
-        self.c4_d = conv_layer(in_channels, self.distilled_channels, 1)
-        self.fuse = conv_layer(self.distilled_channels*4, in_channels, 1)
-        self.act = activation('lrelu', neg_slope=0.05)
-        self.esa = ESA(in_channels, nn.Conv2d)
-
-    def forward(self, input):
-        distilled_c1 = self.act(self.c1_d(input))
-        r_c1 = self.c1_r(input)
-
-        distilled_c2 = self.act(self.c2_d(r_c1))
-        r_c2 = self.c2_r(r_c1)
-        r_c2 = self.act(r_c1 + r_c2)
-
-        distilled_c3 = self.act(self.c3_d(r_c2))
-        r_c3 = self.c3_r(r_c2)
-        r_c3 = self.act(r_c2 + r_c3)
-
-        distilled_c4 = self.act(self.c4_d(r_c3))
-
-        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, distilled_c4], dim=1)
-        out_fused = self.esa(self.fuse(out))
-
-        if self.add:
-            return out_fused + input
-        else:
-            return out_fused
 
 def pixelshuffle_block(in_channels, out_channels, upscale_factor=2, kernel_size=3, stride=1):
     conv = conv_layer(in_channels, out_channels * (upscale_factor ** 2), kernel_size, stride)

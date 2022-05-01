@@ -137,7 +137,6 @@ class PPM(nn.Module):
 class RFDBBlock(nn.Module):
     def __init__(self, in_channels, out_channels, ver=False, tail=False, add=False, shuffle=False, bone=E_RFDB, att=ESA):
         super(RFDBBlock, self).__init__()
-        self.add = add
         if ver:
             block = [bone(in_channels, shuffle=shuffle, att=att)]
             if not tail:
@@ -151,7 +150,6 @@ class RFDBBlock(nn.Module):
             self.block = nn.Sequential(*block)
 
     def forward(self, x):
-        if self.add: return x + self.block(x)
         return self.block(x)
 
 # TODO: modify

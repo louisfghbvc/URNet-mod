@@ -152,6 +152,30 @@ class RFDBBlock(nn.Module):
     def forward(self, x):
         return self.block(x)
 
+# four RFDB block
+class RFDBGroup(nn.Module):
+    def __init__(self, in_channels, add=False, shuffle=False, bone=E_RFDB, att=ESA):
+        super(RFDBGroup, self).__init__()
+        channels = [1, 2, 4, 8]
+        body = []
+        for p in range(4):
+            if p == 3:
+                body.append(bone(in_channels // channels[p], in_channels // channels[p]))
+            else:
+                body.append(bone(in_channels // channels[p], in_channels // channels[p + 1]))
+        self.body = nn.ModuleList(doby)
+        self.fuse = nn.Conv2d(in_channels, in_channels, kernel_size=1)
+        self.esa = att(in_channels, nn.Conv2d)
+
+    def forward(self, x):
+        out = []
+        for i in range(4):
+            x = self.body[i](x)
+            out.append(x)
+        out = torch.cat(out, dim=1)
+        out = self.esa(self.fuse(out))
+        return out
+
 # TODO: modify
 class FDPRG(nn.Module):
     def __init__(self, channels, kernel_size=3, bias=True, scale=2, shuffle=False, bone=E_RFDB, att=ESA, cbone=CFPB):  # n_RG=4
@@ -432,59 +456,6 @@ class ANRB_P(nn.Module):
         context = self.W(context)
         context += x
         return context
-
-
-# class ACMLP(nn.Module):
-#     def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1, groups=1, padding_mode='zeros'):
-#         super(ACMLP, self).__init__()
-#         self.padding = kernel_size // 2
-
-#         center_offset_from_origin_border = self.padding - kernel_size // 2
-#         ver_pad_or_crop = (center_offset_from_origin_border + 1, center_offset_from_origin_border)
-#         hor_pad_or_crop = (center_offset_from_origin_border, center_offset_from_origin_border + 1)
-#         if center_offset_from_origin_border >= 0:
-#             self.ver_conv_crop_layer = nn.Identity()
-#             ver_conv_padding = ver_pad_or_crop
-#             self.hor_conv_crop_layer = nn.Identity()
-#             hor_conv_padding = hor_pad_or_crop
-#         else:
-#             self.ver_conv_crop_layer = CropLayer(crop_set=ver_pad_or_crop)
-#             ver_conv_padding = (0, 0)
-#             self.hor_conv_crop_layer = CropLayer(crop_set=hor_pad_or_crop)
-#             hor_conv_padding = (0, 0)
-
-#         # convert to 1
-#         self.reduction = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=1)
-#         self.expansion = nn.Conv2d(in_channels=1, out_channels=out_channels, kernel_size=1)
-
-#         self.ver_conv = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=(kernel_size, 1),
-#                                     stride=stride,
-#                                     padding='same', dilation=dilation, groups=groups, bias=True,
-#                                     padding_mode=padding_mode)
-
-#         self.hor_conv = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=(1, kernel_size),
-#                                     stride=stride,
-#                                     padding='same', dilation=dilation, groups=groups, bias=True,
-#                                     padding_mode=padding_mode)
-
-#         self.fuse = nn.Conv2d(in_channels=3, out_channels=1, kernel_size=1,
-#                                     stride=stride,
-#                                     padding='same', dilation=dilation, groups=groups, bias=True,
-#                                     padding_mode=padding_mode)
-
-#     def forward(self, input):
-#         x = self.reduction(input)
-
-#         vertical_outputs = self.ver_conv_crop_layer(x)
-#         vertical_outputs = self.ver_conv(vertical_outputs)
-
-#         horizontal_outputs = self.hor_conv_crop_layer(x)
-#         horizontal_outputs = self.hor_conv(horizontal_outputs)
-#         x_fuse = torch.cat([vertical_outputs, horizontal_outputs, x], dim = 1)
-#         out = self.fuse(x_fuse)
-
-#         return self.expansion(out)
-
 
 class ASMLP(nn.Module):
     def __init__(self, in_channels, scale=1, psp_size=(1, 3, 6, 8)):

@@ -61,3 +61,9 @@ def set_template(args):
         args.model = 'RFDN'
         args.lr = 5e-4
         args.n_feats = 48
+    
+    if args.template.find('DDN') >= 0:
+        args.model = 'DDN'
+        args.lr = 5e-4
+        args.n_feats = 64
+        args.n_rfddbgroups = 1

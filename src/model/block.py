@@ -163,7 +163,7 @@ class RFDBGroup(nn.Module):
                 body.append(bone(in_channels // channels[p], in_channels // channels[p]))
             else:
                 body.append(bone(in_channels // channels[p], in_channels // channels[p + 1]))
-        self.body = nn.ModuleList(doby)
+        self.body = nn.ModuleList(body)
         self.fuse = nn.Conv2d(in_channels, in_channels, kernel_size=1)
         self.esa = att(in_channels, nn.Conv2d)
 

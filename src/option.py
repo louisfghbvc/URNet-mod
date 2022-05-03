@@ -83,6 +83,10 @@ parser.add_argument('--n_resgroups', type=int, default=10,
 parser.add_argument('--reduction', type=int, default=16,
                     help='number of feature maps reduction')
 
+# Option for Distillation of Distillation net (DDN)
+parser.add_argument('--n_rfddbgroups', type=int, default=1,
+                    help='number of rfddb groups')
+
 # Training specifications
 parser.add_argument('--reset', action='store_true',
                     help='reset the training')

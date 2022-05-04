@@ -24,21 +24,21 @@ class URN3(nn.Module):
         down = []
         for p in range(4):
             if p == 3:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=E_RFDB1x1))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=E_RFDB1x1, shuffle=True))
             else:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=E_RFDB1x1))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=E_RFDB1x1, shuffle=True))
         self.down = nn.ModuleList(down)
 
         up = []
         for p in range(4):
             if p == 3:
-                up.append(E_RFDB1x1(nf // channels[3 - p], nf))
+                up.append(E_RFDB1x1(nf // channels[3 - p], nf, shuffle=True))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, bone=E_RFDB1x1))
+                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, bone=E_RFDB1x1, shuffle=True))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)
-        self.anrb = ANRB(nf)
+        self.anrb = ANRBsoft(nf)
 
         self.tail_up = pixelshuffle_block(nf, args.n_colors, upscale_factor=scale)
 

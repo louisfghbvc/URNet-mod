@@ -154,8 +154,10 @@ class RFDBBlock(nn.Module):
 
 # four RFDB block
 class RFDBGroup(nn.Module):
-    def __init__(self, in_channels, add=False, shuffle=False, bone=E_RFDB, att=ESA):
+    def __init__(self, in_channels, add=False, shuffle=False, bone=E_RFDB, att=ESA, index=-1):
         super(RFDBGroup, self).__init__()
+        self.add = add
+        self.index = index
         channels = [1, 2, 4, 8]
         body = []
         for p in range(4):
@@ -165,16 +167,21 @@ class RFDBGroup(nn.Module):
                 body.append(bone(in_channels // channels[p], in_channels // channels[p + 1]))
         self.body = nn.ModuleList(body)
         self.fuse = nn.Conv2d(in_channels, in_channels, kernel_size=1)
-        self.esa = att(in_channels, nn.Conv2d)
+        # self.esa = att(in_channels, nn.Conv2d)
 
     def forward(self, x):
+        input = x
         out = []
         for i in range(4):
             x = self.body[i](x)
             out.append(x)
-        out = torch.cat(out, dim=1)
-        out = self.esa(self.fuse(out))
-        return out
+        out_cat = torch.cat(out, dim=1)
+        out_cat = self.fuse(out_cat)
+        if self.add:
+            out_cat += input
+        if self.index != -1:
+            return out_cat, out[self.index]
+        return out_cat
 
 # TODO: modify
 class FDPRG(nn.Module):

@@ -66,4 +66,3 @@ def set_template(args):
         args.model = 'DDN'
         args.lr = 5e-4
         args.n_feats = 64
-        args.n_rfddbgroups = 1

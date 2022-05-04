@@ -15,13 +15,20 @@ class DDN(nn.Module):
         super(DDN, self).__init__()
         nf = args.n_feats
         scale = args.scale[0]
+        ng = args.n_rfddbgroups
+
         self.test_only = args.test_only
         self.sub_mean = common.MeanShift(args.rgb_range)
         self.add_mean = common.MeanShift(args.rgb_range, sign=1)
 
         self.head = ACBlock(args.n_colors, nf, kernel_size=3)
-        self.body = RFDBGroup(nf, bone=E_RFDDB1x1)
+        
+        self.body = [RFDBGroup(nf, add=False, bone=E_RFDDB1x1, index=i) for i in range(ng)]
+        self.body = nn.ModuleList(self.body)
+
+        self.convE = common.default_conv(nf, nf, kernel_size=3)
         self.conv = common.default_conv(nf, nf, kernel_size=3)
+        
         self.anrb = ANRBsoft(nf)
 
         self.tail_up = pixelshuffle_block(nf, args.n_colors, upscale_factor=scale)
@@ -32,9 +39,15 @@ class DDN(nn.Module):
         input_x = x
 
         # body part
-        x = self.body(x)
+        remain = []
+        for body in self.body:
+            x, v = body(x)
+            remain.append(v)
+        remain = torch.cat(remain, dim=1)
 
         x = self.conv(x)
+        remain = self.convE(remain)
+        x += remain
         x += input_x
         x = self.anrb(x)
 

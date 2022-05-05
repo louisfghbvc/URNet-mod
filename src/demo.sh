@@ -5,10 +5,10 @@
 # python main.py --dir_data ../dataset --model urn2 --scale 2 --patch_size 128 --batch_size 32 --save urn2.1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --reset
 
 # V3 + MCA
-python main.py --dir_data ../dataset --model urn3 --scale 2 --patch_size 128 --batch_size 32 --load urn1x1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --epochs 600 --resume 0 --pre_train ../experiment/urn1x1_x2/model/model_latest.pt --decay 400-600-800
-# python main.py --dir_data ../dataset --model urn3 --scale 2 --patch_size 128 --batch_size 32 --save urn1x1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --epochs 300 --reset
+# python main.py --dir_data ../dataset --model urn3 --scale 2 --patch_size 128 --batch_size 32 --save urn1x1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --epochs 600 --resume 0 --pre_train ../experiment/urn1x1_x2/model/model_latest.pt --decay 400-600-800
+python main.py --dir_data ../dataset --model urn3 --scale 2 --patch_size 128 --batch_size 32 --save urn1x1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --epochs 600 --reset
 
-
+  
 # v5 + share weight
 # python main.py --dir_data ../dataset --model urn5 --scale 2 --patch_size 128 --batch_size 32 --save urn5.1_x2 --loss 1.0*L1+0.25*canny --lr 5e-4 --reset
 
@@ -17,7 +17,7 @@ python main.py --dir_data ../dataset --model urn3 --scale 2 --patch_size 128 --b
 
 
 # URNet model (x3) - from URNet (x2)
-# python main.py --dir_data ../dataset --model urn --scale 3 --patch_size 192 --batch_size 32 --save urn_x3 --loss 1.0*L1+0.25*canny --lr 2.5e-4 --reset --pre_train ../experiment/urn_x2_base/model/model_best.pt --epochs 300
+# python main.py --dir_data ../dataset --model urn3 --scale 3 --patch_size 192 --batch_size 32 --save urn1x1_x3 --loss 1.0*L1+0.25*canny --lr 2.5e-4 --reset --epochs 300 --pre_train ../experiment/urn1x1_x2/model/model_best.pt 
 # resume
 # python main.py --dir_data ../dataset --model urn --scale 3 --patch_size 192 --batch_size 32 --load urn_x3 --loss 1.0*L1+0.25*canny --lr 5e-4 --epochs 600 --resume 0 --pre_train ../experiment/urn_x3/model/model_latest.pt --decay 400-600-800
 

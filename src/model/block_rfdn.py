@@ -583,7 +583,7 @@ class E_RFDB(nn.Module):
 
 # 1x1 convolution 
 class E_RFDB1x1(nn.Module):
-    def __init__(self, in_channels, distillation_rate=0.25, add=True, shuffle=False, att=ESA):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
         super(E_RFDB1x1, self).__init__()
         self.add = add
         self.shuffle = shuffle

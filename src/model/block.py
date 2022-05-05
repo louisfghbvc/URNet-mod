@@ -138,7 +138,7 @@ class RFDBBlock(nn.Module):
     def __init__(self, in_channels, out_channels, ver=False, tail=False, add=False, shuffle=False, bone=E_RFDB, att=ESA):
         super(RFDBBlock, self).__init__()
         if ver:
-            block = [bone(in_channels, shuffle=shuffle, att=att)]
+            block = [bone(in_channels, shuffle=shuffle, att=att, add=add)]
             if not tail:
                 block.append(nn.Conv2d(in_channels, out_channels, 1, padding=0))
             self.block = nn.Sequential(*block)
@@ -146,7 +146,7 @@ class RFDBBlock(nn.Module):
             block = []
             if not tail:
                 block.append(nn.Conv2d(in_channels, out_channels, 1, padding=0))
-            block.append(bone(out_channels, shuffle=shuffle, att=att))
+            block.append(bone(out_channels, shuffle=shuffle, att=att, add=add))
             self.block = nn.Sequential(*block)
 
     def forward(self, x):

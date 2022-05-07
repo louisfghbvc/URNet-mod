@@ -21,20 +21,21 @@ class URN3(nn.Module):
 
         self.head = ACBlock(args.n_colors, nf, kernel_size=3)
         channels = [1, 2, 4, 8]
+        n = len(channels) # number of channels
         down = []
-        for p in range(4):
-            if p == 3:
+        for p in range(n):
+            if p == n-1:
                 down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=E_RFDB1x1, shuffle=False))
             else:
                 down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=E_RFDB1x1, shuffle=False))
         self.down = nn.ModuleList(down)
 
         up = []
-        for p in range(4):
-            if p == 3:
-                up.append(E_RFDB1x1(nf // channels[3 - p], nf, shuffle=False))
+        for p in range(n):
+            if p == n-1:
+                up.append(E_RFDB1x1(nf // channels[n - 1 - p], nf, shuffle=False))
             else:
-                up.append(FDPRG(nf // channels[3 - p], nf // channels[3 - p], scale=scale, bone=E_RFDB1x1, shuffle=False))
+                up.append(FDPRG(nf // channels[n - 1 - p], nf // channels[n - 1 - p], scale=scale, bone=E_RFDB1x1, shuffle=False))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)

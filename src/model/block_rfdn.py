@@ -629,6 +629,61 @@ class E_RFDB1x1(nn.Module):
         else:
             return out_fused
 
+
+# 1x1 convolution all you need
+class EEFDB(nn.Module):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
+        super(EEFDB, self).__init__()
+        self.add = add
+        self.shuffle = shuffle
+        self.dc = self.distilled_channels = in_channels//2
+        self.rc = self.remaining_channels = in_channels
+        self.c1_d = conv_layer(in_channels, self.dc, 1)
+        self.c1_r_sq = conv_layer(self.rc, self.dc, 1) # squeeze
+        self.c1_r_ex = conv_layer(self.dc, self.rc, 1) # extand
+        self.c2_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c2_r_sq = conv_layer(self.rc, self.dc, 1)
+        self.c2_r_ex = conv_layer(self.dc, self.rc, 1)
+        self.c3_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c3_r_sq = conv_layer(self.rc, self.dc, 1)
+        self.c3_r_ex = conv_layer(self.dc, self.rc, 1)
+        self.c4 = conv_layer(self.remaining_channels, self.dc, 1)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.c5 = conv_layer(self.dc*4, in_channels, 1)
+        self.esa = att(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        if self.shuffle: # channel shuffle
+            input = common.channel_shuffle(input, 2)
+
+        distilled_c1 = self.act(self.c1_d(input))
+        r_c1 = (self.c1_r_sq(input))
+        r_c1 = self.act(r_c1)
+        r_c1 = self.c1_r_ex(r_c1) + input # residual
+
+        distilled_c2 = self.act(self.c2_d(r_c1))
+        r_c2 = (self.c2_r_sq(r_c1))
+        r_c2 = self.act(r_c2)
+        r_c2 = self.c2_r_ex(r_c2) + r_c1
+
+        distilled_c3 = self.act(self.c3_d(r_c2))
+        r_c3 = (self.c3_r_sq(r_c2))
+        r_c3 = self.act(r_c3)
+        r_c3 = self.c3_r_ex(r_c3) + r_c2
+
+        r_c4 = self.act(self.c4(r_c3))
+
+        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, r_c4], dim=1)
+        out_fused = self.esa(self.c5(out))
+
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        if self.add:
+            return out_fused + input
+        else:
+            return out_fused
+
 # down sample directly
 class E_RFDDB1x1(nn.Module):
     def __init__(self, in_channels, out_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):

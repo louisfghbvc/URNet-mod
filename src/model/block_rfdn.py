@@ -146,16 +146,17 @@ class SpatialGate(nn.Module):
 
 # contrast-aware channel attention module
 class CCALayer(nn.Module):
-    def __init__(self, channel, conv=None, reduction=2, act=False):
+    def __init__(self, channel, conv=None, reduction=2, sig=False):
         super(CCALayer, self).__init__()
 
         self.contrast = stdv_channels
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv_du = nn.Sequential(
             nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
-            nn.ReLU(inplace=True),
+            # nn.ReLU(inplace=True),
+            activation('lrelu', neg_slope=0.05),
             nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
-            nn.Sigmoid() if act else None
+            nn.Sigmoid() if sig else None
         )
 
     def forward(self, x):

@@ -146,7 +146,7 @@ class SpatialGate(nn.Module):
 
 # contrast-aware channel attention module
 class CCALayer(nn.Module):
-    def __init__(self, channel, conv, reduction=4):
+    def __init__(self, channel, conv=None, reduction=2, act=False):
         super(CCALayer, self).__init__()
 
         self.contrast = stdv_channels
@@ -155,7 +155,7 @@ class CCALayer(nn.Module):
             nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
             nn.ReLU(inplace=True),
             nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
-            nn.Sigmoid()
+            nn.Sigmoid() if act else None
         )
 
     def forward(self, x):
@@ -670,6 +670,51 @@ class EEFDB(nn.Module):
         r_c3 = (self.c3_r_sq(r_c2))
         r_c3 = self.act(r_c3)
         r_c3 = self.c3_r_ex(r_c3) + r_c2
+
+        r_c4 = self.act(self.c4(r_c3))
+
+        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, r_c4], dim=1)
+        out_fused = self.esa(self.c5(out))
+
+        if self.shuffle: # channel shuffle
+            out_fused = common.channel_shuffle(out_fused, 2)
+
+        if self.add:
+            return out_fused + input
+        else:
+            return out_fused
+
+# efficient channel feauture distillation 
+class ECFDB(nn.Module):
+    def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
+        super(EAFDB, self).__init__()
+        self.add = add
+        self.shuffle = shuffle
+        self.dc = self.distilled_channels = in_channels//2
+        self.rc = self.remaining_channels = in_channels
+        self.c1_d = conv_layer(in_channels, self.dc, 1)
+        self.c1_r = CCALayer(in_channels) # no sigmoid
+        self.c2_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c2_r = CCALayer(in_channels) # no sigmoid
+        self.c3_d = conv_layer(self.remaining_channels, self.dc, 1)
+        self.c3_r = CCALayer(in_channels) # no sigmoid
+        self.c4 = conv_layer(self.remaining_channels, self.dc, 1)
+        self.act = activation('lrelu', neg_slope=0.05)
+        self.c5 = conv_layer(self.dc*4, in_channels, 1)
+        self.esa = att(in_channels, nn.Conv2d)
+
+    def forward(self, input):
+        if self.shuffle: # channel shuffle
+            input = common.channel_shuffle(input, 2)
+
+        distilled_c1 = self.act(self.c1_d(input))
+        r_c1 = self.c1_r(input) + input
+
+        distilled_c2 = self.act(self.c2_d(r_c1))
+        r_c2 = self.c2_r(r_c1) + r_c1
+
+        distilled_c3 = self.act(self.c3_d(r_c2))
+        r_c3 = self.c3_r(r_c2) + r_c2
 
         r_c4 = self.act(self.c4(r_c3))
 

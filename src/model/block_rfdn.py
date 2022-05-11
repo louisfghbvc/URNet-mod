@@ -164,7 +164,8 @@ class CCALayer(nn.Module):
     def forward(self, x):
         y = self.contrast(x) + self.avg_pool(x)
         y = self.conv_du(y)
-        return x * y
+        # return x * y
+        return y 
 
 # CCA + SA
 class CBAM(nn.Module):

@@ -21,21 +21,21 @@ class URN3(nn.Module):
 
         self.head = ACBlock(args.n_colors, nf, kernel_size=3)
         channels = [1, 2, 4, 8]
-        n = len(channels) # number of channels
+        self.n = len(channels) # number of channels
         down = []
-        for p in range(n):
-            if p == n-1:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=E_RFDB1x1, shuffle=False))
+        for p in range(self.n):
+            if p == self.n-1:
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p], ver=True, tail=True, bone=ECFDB, shuffle=False))
             else:
-                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=E_RFDB1x1, shuffle=False))
+                down.append(RFDBBlock(nf // channels[p], nf // channels[p + 1], ver=True, bone=ECFDB, shuffle=False))
         self.down = nn.ModuleList(down)
 
         up = []
-        for p in range(n):
-            if p == n-1:
-                up.append(E_RFDB1x1(nf // channels[n - 1 - p], nf, shuffle=False))
+        for p in range(self.n):
+            if p == self.n-1:
+                up.append(ECFDB(nf // channels[self.n - 1 - p], nf, shuffle=False))
             else:
-                up.append(FDPRG(nf // channels[n - 1 - p], nf // channels[n - 1 - p], scale=scale, bone=E_RFDB1x1, shuffle=False))
+                up.append(FDPRG(nf // channels[self.n - 1 - p], nf // channels[self.n - 1 - p], scale=scale, bone=ECFDB, shuffle=False))
         self.up = nn.ModuleList(up)
 
         self.conv = common.default_conv(nf, nf, kernel_size=3)
@@ -49,12 +49,12 @@ class URN3(nn.Module):
         input_x = x
 
         down_out = []
-        for i in range(4):
+        for i in range(self.n):
             x = self.down[i](x)
             down_out.append(x)
 
         x = self.up[0](x)
-        for i in range(1, 4):
+        for i in range(1, self.n):
             x = torch.cat([down_out[-1 - i], x], dim=1)
             x = self.up[i](x)
 

@@ -688,7 +688,7 @@ class EEFDB(nn.Module):
 # efficient channel feauture distillation 
 class ECFDB(nn.Module):
     def __init__(self, in_channels, distillation_rate=0.25, add=False, shuffle=False, att=ESA):
-        super(EAFDB, self).__init__()
+        super(ECFDB, self).__init__()
         self.add = add
         self.shuffle = shuffle
         self.dc = self.distilled_channels = in_channels//2

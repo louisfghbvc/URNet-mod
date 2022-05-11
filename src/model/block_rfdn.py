@@ -151,13 +151,15 @@ class CCALayer(nn.Module):
 
         self.contrast = stdv_channels
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.conv_du = nn.Sequential(
+        self.conv_du = [
             nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
             # nn.ReLU(inplace=True),
             activation('lrelu', neg_slope=0.05),
             nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
-            nn.Sigmoid() if sig else None
-        )
+        ]
+        if sig:
+            self.conv_du.append(nn.Sigmoid())
+        self.conv_du = nn.Sequential(*self.conv_du)
 
     def forward(self, x):
         y = self.contrast(x) + self.avg_pool(x)

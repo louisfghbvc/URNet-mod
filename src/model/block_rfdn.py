@@ -603,6 +603,9 @@ class E_RFDB1x1(nn.Module):
         self.act = activation('lrelu', neg_slope=0.05)
         self.c5 = conv_layer(self.dc*4, in_channels, 1)
         self.esa = att(in_channels, nn.Conv2d)
+        if add:
+            self.res = conv_layer(in_channels, in_channels, 1)
+
 
     def forward(self, input):
         if self.shuffle: # channel shuffle
@@ -629,7 +632,7 @@ class E_RFDB1x1(nn.Module):
             out_fused = common.channel_shuffle(out_fused, 2)
 
         if self.add:
-            return out_fused + input
+            return out_fused + self.res(input)
         else:
             return out_fused
 

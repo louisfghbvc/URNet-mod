@@ -95,6 +95,9 @@ class Trainer():
                     self.ckp.log[-1, idx_data, idx_scale] += utility.calc_psnr(
                         sr, hr, scale, self.args.rgb_range, dataset=d
                     )
+                    # self.ckp.log[-1, idx_data, idx_scale] += utility.calc_ssim(
+                    #     sr, hr, scale, self.args.rgb_range, dataset=d
+                    # )
                     if self.args.save_gt:
                         save_list.extend([lr, hr])
 
@@ -112,6 +115,15 @@ class Trainer():
                         best[1][idx_data, idx_scale] + 1
                     )
                 )
+                # self.ckp.write_log(
+                #     '[{} x{}]\SSIM: {:.3f} (Best: {:.3f} @epoch {})'.format(
+                #         d.dataset.name,
+                #         scale,
+                #         self.ckp.log[-1, idx_data, idx_scale],
+                #         best[0][idx_data, idx_scale],
+                #         best[1][idx_data, idx_scale] + 1
+                #     )
+                # )
 
         self.ckp.write_log('Forward: {:.2f}s\n'.format(timer_test.toc()))
         self.ckp.write_log('Saving...')

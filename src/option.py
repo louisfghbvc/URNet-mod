@@ -104,6 +104,8 @@ parser.add_argument('--test_only', action='store_true',
                     help='set this option to test the model')
 parser.add_argument('--gan_k', type=int, default=1,
                     help='k value for adversarial loss')
+parser.add_argument('--eval_metric', type=str, default='PSNR',
+                    help='metric of PSNR/SSIM')
 
 # Optimization specifications
 parser.add_argument('--lr', type=float, default=1e-4,
